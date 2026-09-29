@@ -16,7 +16,7 @@ Find items across characters, arrange your inventory, and review what stays, ban
 
 </div>
 
-![DA Organizer collection: Celtic gold details, category grids and quantity badges](docs/screenshots/collection.png)
+![DA Organizer collection: Celtic gold details, category grids and quantity badges](docs/screenshots/collection-v0.15.0.png)
 
 ## A place for everything
 
@@ -30,8 +30,8 @@ Find items across characters, arrange your inventory, and review what stays, ban
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/inventory.png" alt="Character inventory with game sprites and flexible quick slots"/><br/><strong>Inventory, with game sprites</strong></td>
-<td width="50%"><img src="docs/screenshots/item-details.png" alt="Item drawer with owners and locations"/><br/><strong>Every owner. Every location.</strong></td>
+<td width="50%"><img src="docs/screenshots/inventory-v0.15.0.png" alt="Character inventory with game sprites and flexible quick slots"/><br/><strong>Inventory, with game sprites</strong></td>
+<td width="50%"><img src="docs/screenshots/item-details-v0.15.0.png" alt="Item drawer with owners and locations"/><br/><strong>Every owner. Every location.</strong></td>
 </tr>
 </table>
 
