@@ -1,0 +1,47 @@
+﻿name: Build and verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      AVALONIA_TELEMETRY_OPTOUT: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore DAOrganizer.slnx -m:1
+      - name: Build
+        run: dotnet build DAOrganizer.slnx -c Release --no-restore -m:1 -p:UsedAvaloniaProducts=
+      - name: Unit and protocol tests
+        run: dotnet test tests/DAOrganizer.Tests -c Release --no-build -m:1 --logger trx --results-directory artifacts/test-results
+      - name: UI regression checks
+        run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/ui-checks
+      - name: Demo isolation and screenshots
+        run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/gallery --gallery
+      - name: Package Windows app
+        run: ./tools/Package.ps1 -Output artifacts/DAOrganizer
+      - name: Upload portable build
+        uses: actions/upload-artifact@v7
+        with:
+          name: DAOrganizer-win-x64
+          path: artifacts/DAOrganizer/
+          if-no-files-found: error
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification
+          path: |
+            artifacts/test-results/*.trx
+            artifacts/ui-checks/*.png
+            artifacts/gallery/*.png

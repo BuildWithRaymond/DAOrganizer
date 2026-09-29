@@ -1,0 +1,116 @@
+using Microsoft.Data.Sqlite;
+using System.Text.Json;
+namespace DAOrganizer.Core;
+
+public sealed class InventoryStore:IDisposable
+{
+    private readonly SqliteConnection _db;
+    private readonly Lock _gate=new();
+    public InventoryStore(string path)
+    {
+        if(path!=":memory:") Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        _db=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=path}.ToString());
+        _db.Open();
+        Execute("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
+        Execute("""
+            CREATE TABLE IF NOT EXISTS characters(name TEXT PRIMARY KEY COLLATE NOCASE,last_seen TEXT);
+            CREATE TABLE IF NOT EXISTS snapshots(character TEXT COLLATE NOCASE,location TEXT,state TEXT,updated TEXT,PRIMARY KEY(character,location));
+            CREATE TABLE IF NOT EXISTS items(character TEXT COLLATE NOCASE,location TEXT,slot INTEGER,data TEXT,PRIMARY KEY(character,location,slot));
+            CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
+            PRAGMA user_version=1;
+            """);
+    }
+    private void Execute(string sql,params (string,object?)[] parameters)
+    {
+        using var command=_db.CreateCommand(); command.CommandText=sql;
+        foreach(var (key,value) in parameters) command.Parameters.AddWithValue(key,value??DBNull.Value);
+        command.ExecuteNonQuery();
+    }
+    public void EnsureCharacter(string name)
+    {
+        if(string.IsNullOrWhiteSpace(name)||name.Length>32||!name.All(char.IsAsciiLetter)) throw new ArgumentException("Enter a character name using letters only.");
+        lock(_gate) Execute("INSERT OR IGNORE INTO characters(name) VALUES($n)",("$n",name));
+    }
+    public void SaveSnapshot(string character,string location,IEnumerable<Item> items,bool complete)
+    {
+        var rows=items.ToArray();
+        lock(_gate)
+        {
+            EnsureCharacter(character);
+            using var transaction=_db.BeginTransaction();
+            var now=DateTimeOffset.UtcNow.ToString("O");
+            if(complete)
+            {
+                Execute("DELETE FROM items WHERE character=$c AND location=$l",("$c",character),("$l",location));
+                foreach(var item in rows) Execute("INSERT INTO items VALUES($c,$l,$s,$d)",("$c",character),("$l",location),("$s",item.Slot),("$d",JsonSerializer.Serialize(item)));
+            }
+            Execute("""
+                INSERT INTO snapshots VALUES($c,$l,$s,$t)
+                ON CONFLICT(character,location) DO UPDATE SET state=$s, updated=CASE WHEN $s='Current' THEN $t ELSE updated END
+                """,("$c",character),("$l",location),("$s",complete?"Current":"Incomplete"),("$t",now));
+            Execute("UPDATE characters SET last_seen=$t WHERE name=$c",("$c",character),("$t",now));
+            transaction.Commit();
+        }
+    }
+    public void MarkStale(string character,string? location=null)
+    {
+        lock(_gate) Execute("UPDATE snapshots SET state='Stale' WHERE character=$c AND ($l IS NULL OR location=$l)",("$c",character),("$l",location));
+    }
+    public IReadOnlyList<Item> Items(string character,string location)
+    {
+        lock(_gate)
+        {
+            using var cmd=_db.CreateCommand();cmd.CommandText="SELECT data FROM items WHERE character=$c AND location=$l ORDER BY slot";
+            cmd.Parameters.AddWithValue("$c",character);cmd.Parameters.AddWithValue("$l",location);
+            using var reader=cmd.ExecuteReader();var rows=new List<Item>();
+            while(reader.Read()) rows.Add(JsonSerializer.Deserialize<Item>(reader.GetString(0))!);
+            return rows;
+        }
+    }
+    public string Freshness(string character,string location)
+    {
+        lock(_gate)
+        {
+            using var cmd=_db.CreateCommand();cmd.CommandText="SELECT state FROM snapshots WHERE character=$c AND location=$l";
+            cmd.Parameters.AddWithValue("$c",character);cmd.Parameters.AddWithValue("$l",location);
+            return cmd.ExecuteScalar() as string??"Never scanned";
+        }
+    }
+    public IReadOnlyList<CharacterSummary> Characters()
+    {
+        lock(_gate)
+        {
+            using var cmd=_db.CreateCommand();cmd.CommandText="SELECT name,last_seen FROM characters ORDER BY name COLLATE NOCASE";
+            using var r=cmd.ExecuteReader(); var result=new List<(string,DateTimeOffset?)>();
+            while(r.Read()) result.Add((r.GetString(0),r.IsDBNull(1)?null:DateTimeOffset.Parse(r.GetString(1))));
+            r.Close();return result.Select(x=>new CharacterSummary(x.Item1,Freshness(x.Item1,"Inventory"),Freshness(x.Item1,"Bank"),x.Item2)).ToArray();
+        }
+    }
+    public IReadOnlyList<StoredItem> Search(string text)
+    {
+        lock(_gate)
+        {
+            using var cmd=_db.CreateCommand();cmd.CommandText="SELECT i.character,i.location,i.data,s.updated FROM items i JOIN snapshots s ON i.character=s.character AND i.location=s.location";
+            using var r=cmd.ExecuteReader();var result=new List<StoredItem>();
+            while(r.Read())
+            {
+                var item=JsonSerializer.Deserialize<Item>(r.GetString(2))!;
+                if(item.Name.Contains(text,StringComparison.OrdinalIgnoreCase)) result.Add(new(r.GetString(0),r.GetString(1),item,DateTimeOffset.Parse(r.GetString(3))));
+            }
+            return result.OrderBy(x=>x.Item.Name).ThenBy(x=>x.Character).ToArray();
+        }
+    }
+    public void Put<T>(string key,T value)
+    {
+        lock(_gate) Execute("INSERT INTO settings VALUES($k,$v) ON CONFLICT(key) DO UPDATE SET value=$v",("$k",key),("$v",JsonSerializer.Serialize(value)));
+    }
+    public T? Get<T>(string key)
+    {
+        lock(_gate)
+        {
+            using var cmd=_db.CreateCommand();cmd.CommandText="SELECT value FROM settings WHERE key=$k";cmd.Parameters.AddWithValue("$k",key);
+            return cmd.ExecuteScalar() is string value?JsonSerializer.Deserialize<T>(value):default;
+        }
+    }
+    public void Dispose(){lock(_gate) _db.Dispose();}
+}

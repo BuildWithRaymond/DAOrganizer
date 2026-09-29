@@ -1,0 +1,30 @@
+﻿<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <Color x:Key="SystemAccentColor">#D6B46A</Color>
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush">#D6B46A</SolidColorBrush>
+  </Styles.Resources>
+  <Style Selector="Window"><Setter Property="Background" Value="#090A0C"/><Setter Property="Foreground" Value="#F2E8D2"/><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="13"/></Style>
+  <Style Selector="Button"><Setter Property="CornerRadius" Value="5"/><Setter Property="Padding" Value="13,9"/><Setter Property="Background" Value="#1A1B1F"/><Setter Property="BorderBrush" Value="#303033"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Foreground" Value="#DCD9D1"/></Style>
+  <Style Selector="Button:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="#25231E"/><Setter Property="BorderBrush" Value="#8D7442"/><Setter Property="TextElement.Foreground" Value="#F2E8D2"/></Style>
+  <Style Selector="Button:focus-visible /template/ ContentPresenter"><Setter Property="BorderBrush" Value="#F0CF85"/><Setter Property="BorderThickness" Value="2"/></Style>
+  <Style Selector="Button.primary"><Setter Property="Background" Value="#D6B46A"/><Setter Property="Foreground" Value="#17130B"/><Setter Property="BorderBrush" Value="#E5C786"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="#E8CA88"/><Setter Property="TextElement.Foreground" Value="#17130B"/></Style>
+  <Style Selector="Button.danger"><Setter Property="Foreground" Value="#E18689"/><Setter Property="BorderBrush" Value="#583335"/><Setter Property="Background" Value="#211719"/></Style>
+  <Style Selector="Button.quiet"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+  <Style Selector="Button.tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Padding" Value="17,12"/><Setter Property="Foreground" Value="#99999F"/></Style>
+  <Style Selector="Button.tab.active"><Setter Property="BorderBrush" Value="#D6B46A"/><Setter Property="Foreground" Value="#F2E8D2"/><Setter Property="Background" Value="#171610"/></Style>
+  <Style Selector="Button.active"><Setter Property="Background" Value="#252219"/><Setter Property="BorderBrush" Value="#78633B"/><Setter Property="Foreground" Value="#E8CA88"/></Style>
+  <Style Selector="Button.character"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="Padding" Value="12,13"/></Style>
+  <Style Selector="Button.character.active"><Setter Property="Background" Value="#211F19"/><Setter Property="BorderBrush" Value="#645330"/></Style>
+  <Style Selector="Button.slot"><Setter Property="Padding" Value="5"/><Setter Property="Margin" Value="3"/><Setter Property="Background" Value="#151619"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="VerticalContentAlignment" Value="Stretch"/><Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="#2E2C29"/></Style>
+  <Style Selector="Button.slot.protected"><Setter Property="Background" Value="#201D15"/><Setter Property="BorderBrush" Value="#766039"/></Style>
+  <Style Selector="Button.item-tile"><Setter Property="Background" Value="#191A1E"/><Setter Property="BorderBrush" Value="#2C2B29"/><Setter Property="CornerRadius" Value="6"/></Style>
+  <Style Selector="Button.item-tile.active"><Setter Property="Background" Value="#252219"/><Setter Property="BorderBrush" Value="#D6B46A"/></Style>
+  <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="#98999F"/></Style>
+  <Style Selector="TextBlock.heading"><Setter Property="FontFamily" Value="Georgia"/><Setter Property="FontSize" Value="26"/><Setter Property="Foreground" Value="#F2E8D2"/></Style>
+  <Style Selector="TextBlock.caption"><Setter Property="FontSize" Value="10"/><Setter Property="LetterSpacing" Value="1.5"/><Setter Property="Foreground" Value="#98999F"/></Style>
+  <Style Selector="TextBox"><Setter Property="Background" Value="#101113"/><Setter Property="BorderBrush" Value="#35332C"/><Setter Property="CornerRadius" Value="5"/><Setter Property="Padding" Value="12,9"/></Style>
+  <Style Selector="ComboBox"><Setter Property="Background" Value="#151619"/><Setter Property="BorderBrush" Value="#484031"/><Setter Property="CornerRadius" Value="4"/></Style>
+  <Style Selector="ToolTip"><Setter Property="Background" Value="#25221B"/><Setter Property="BorderBrush" Value="#78633B"/><Setter Property="Foreground" Value="#F2E8D2"/></Style>
+  <Style Selector="ScrollBar"><Setter Property="Opacity" Value="0.65"/></Style>
+</Styles>

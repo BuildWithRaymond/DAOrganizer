@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DAOrganizer.App/DAOrganizer.App.csproj" />
+    <Project Path="src/DAOrganizer.Core/DAOrganizer.Core.csproj" />
+    <Project Path="src/DAOrganizer.Game/DAOrganizer.Game.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DAOrganizer.Tests/DAOrganizer.Tests.csproj" />
+    <Project Path="tests/DAOrganizer.UiChecks/DAOrganizer.UiChecks.csproj" />
+    <Project Path="tests/DAOrganizer.LoginCheck/DAOrganizer.LoginCheck.csproj" />
+  </Folder>
+  <Folder Name="/vendor/" />
+  <Folder Name="/vendor/Arbiter/">
+    <Project Path="vendor/Arbiter/Arbiter.Imaging/Arbiter.Imaging.csproj" />
+    <Project Path="vendor/Arbiter/Arbiter.Interop/Arbiter.Interop.csproj" />
+    <Project Path="vendor/Arbiter/Arbiter.IO/Arbiter.IO.csproj" />
+    <Project Path="vendor/Arbiter/Arbiter.Net/Arbiter.Net.csproj" />
+  </Folder>
+</Solution>
