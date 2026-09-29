@@ -10,7 +10,7 @@ using DAOrganizer.Core;
 
 internal static class Gallery
 {
-    public static void Run(string output)
+    public static void Run(string output,bool requireSprites=false)
     {
         var profile=Path.Combine(output,"demo-must-stay-in-memory");
         using var app=new Organizer(profile,demo:true);
@@ -35,12 +35,26 @@ internal static class Gallery
         {
             window.GetVisualDescendants().OfType<Button>().First(x=>x.Content as string==text).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Settle();
         }
+        var until=DateTime.UtcNow.AddSeconds(60);
+        while(!window.ArtworkReady.IsCompleted&&DateTime.UtcNow<until)Settle();
+        if(!window.ArtworkReady.IsCompleted)throw new Exception("Sprite loading timed out.");
+        if(requireSprites&&!window.HasItemSprites)throw new Exception("Original game sprites are required for public screenshots.");
+        if(requireSprites)
+        {
+            using var sprites=new ItemImages();var load=sprites.Load(app.ClientPath);
+            while(!load.IsCompleted)Settle();load.GetAwaiter().GetResult();
+            foreach(var item in app.Store.Search("").Select(x=>x.Item).DistinctBy(x=>(x.Sprite,x.Color)))
+                if(sprites.Get(item.Sprite,item.Color)==null)throw new Exception("Missing original sprite: "+item.Name);
+        }
         Capture("collection");
         var potion=window.GetVisualDescendants().OfType<Button>().Single(x=>x.Tag is ItemGroup g&&g.Item.Name=="Komadium");
         potion.BringIntoView();Settle();potion.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Capture("item-details");
         Click("Close details");
         window.GetVisualDescendants().OfType<Button>().Single(x=>x.Tag as string=="Aisling").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Capture("inventory");
+        window.GetVisualDescendants().OfType<Button>().Single(x=>x.Tag as string=="Bran").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Capture("rogue-inventory");
+        window.GetVisualDescendants().OfType<Button>().Single(x=>x.Tag as string=="Aisling").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Click("Account manager");var manager=window.OwnedWindows.Single(x=>x.Title=="Account manager");Capture("accounts",manager);manager.Close();
         window.Width=980;window.Height=720;Capture("inventory-compact");
         Click("All accounts");window.GetVisualDescendants().OfType<TextBox>().First().Text="No such item";Capture("empty-state");

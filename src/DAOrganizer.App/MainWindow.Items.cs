@@ -59,8 +59,7 @@ public sealed partial class MainWindow
                 if(group.Key==_selectedItemKey)tile.Classes.Add("active");
                 var content=new Grid{RowDefinitions=new("14,48,*,14")};
                 var family=Text(ItemCategories.Family(group.Item).ToUpperInvariant(),8,true);family.TextTrimming=TextTrimming.CharacterEllipsis;family.TextWrapping=TextWrapping.NoWrap;family.LetterSpacing=.7;content.Children.Add(family);
-                var icon=_images.Get(group.Item.Sprite,group.Item.Color);
-                Control artwork=icon!=null?new Image{Source=icon,Width=38,Height=38}:new ItemGlyph(group.Item){Width=42,Height=42};artwork.HorizontalAlignment=HorizontalAlignment.Center;Grid.SetRow(artwork,1);content.Children.Add(artwork);
+                var artwork=ItemArtwork(group.Item,38);artwork.HorizontalAlignment=HorizontalAlignment.Center;Grid.SetRow(artwork,1);content.Children.Add(artwork);
                 var badge=new Border{Background=Brush("#D6B46A"),CornerRadius=new(9),Padding=new(5,1),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Top,
                     Child=new TextBlock{Text=group.Quantity.ToString("N0"),FontFamily=new("Consolas"),FontSize=10,Foreground=Brush("#17130B"),FontWeight=FontWeight.SemiBold}};
                 ToolTip.SetTip(badge,$"{group.Quantity:N0} total in displayed locations");Grid.SetRow(badge,1);content.Children.Add(badge);
@@ -107,8 +106,7 @@ public sealed partial class MainWindow
     {
         var panel=new StackPanel{Spacing=16,Margin=new(20)};
         var close=Button("Close details",()=>{_selectedItemKey=null;return Task.CompletedTask;},"quiet");close.HorizontalAlignment=HorizontalAlignment.Right;panel.Children.Add(close);
-        var art=_images.Get(group.Item.Sprite,group.Item.Color);
-        panel.Children.Add(new Border{Height=88,Background=Brush("#211E17"),BorderBrush=Brush("#4C4029"),BorderThickness=new(1),CornerRadius=new(5),Child=art!=null?new Image{Source=art,Width=54,Height=54}:new ItemGlyph(group.Item){Width=64,Height=64}});
+        panel.Children.Add(new Border{Height=88,Background=Brush("#211E17"),BorderBrush=Brush("#4C4029"),BorderThickness=new(1),CornerRadius=new(5),Child=ItemArtwork(group.Item,54)});
         panel.Children.Add(Text(group.Item.Name,21));panel.Children.Add(Text($"{group.Quantity:N0} total · {ItemCategories.Label(group.Item)}",13,true));
         panel.Children.Add(new CelticRule{Height=10,Opacity=.6});
         panel.Children.Add(RuleEditor(group.Item));
@@ -144,7 +142,7 @@ public sealed partial class MainWindow
         var window=DialogWindow(title,670);var panel=DialogPanel();
         panel.Children.Add(Text(title,22));
         panel.Children.Add(Text($"{plan.Count:N0} stacks · {plan.Select(x=>x.Character).Distinct().Count()} characters · all saved accounts, including hidden characters",12,true));
-        panel.Children.Add(Text(action==ItemAction.Junk?"Selected items will be dropped on the ground and may be lost. Bank items are withdrawn first. Failed drops get no retry; that item stays in inventory.":"Only items marked Auto-deposit will be banked. Equipped items, pins, and protected supplies are excluded.",13,true));
+        panel.Children.Add(Text(action==ItemAction.Junk?"Selected items will be dropped on the ground and may be lost. Bank items are withdrawn first. Failed drops get no retry; that item stays in inventory.":"Only items marked Auto-deposit will be banked. Equipped items and pinned inventory slots are excluded.",13,true));
         var rows=new StackPanel{Spacing=7};var selections=new List<(CheckBox Box,MaintenanceEntry Entry)>();
         foreach(var entry in plan)
         {

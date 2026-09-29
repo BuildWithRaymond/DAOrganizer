@@ -7,13 +7,12 @@ public class CategorySortingTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void SuppliesTakeTheirFixedSlotsDespiteOldPins(bool category)
+    public void ExplicitPinsOverrideQuickSlotSuggestions(bool category)
     {
         Item[] items=[new(1,"Red Potion",20),new(2,"Komadium",10),new(12,"Exkuranum",3),
             new(14,"Dibenomum",4),new(30,"Hemloch",5),new(3,"Emerald",6),new(40,"Pinned",1)];
         var plan=SlotPlanner.Sort(items,new HashSet<int>{1,2,3,12,40},category);
-        Assert.Equal(new[]{"Komadium","Red Potion","Exkuranum","Dibenomum","Hemloch"},
-            Enumerable.Range(1,5).Select(i=>plan[i].Name));
+        Assert.All(items.Where(x=>new[]{1,2,3,12,40}.Contains(x.Slot)),x=>Assert.Equal(x,plan[x.Slot]));
         Assert.Equal(items[^1],plan[40]);
         Assert.Equal(items.OrderBy(x=>x.Slot),plan.Values.OrderBy(x=>x.Slot));
         Assert.NotEmpty(SlotPlanner.Swaps(items,plan));
@@ -24,7 +23,7 @@ public class CategorySortingTests
     {
         var items=Enumerable.Range(1,59).Select(i=>new Item(i,i is 1 or 19?"Komadium":i==28?"Hemloch":$"Item {i:00}",i)).ToArray();
         var plan=SlotPlanner.Sort(items,new HashSet<int>());
-        Assert.Equal(items[0],plan[1]);Assert.Equal(items[27],plan[5]);
+        Assert.Equal(items[0],plan[1]);Assert.Equal(items[27],plan[2]);
         Assert.Equal(items.OrderBy(x=>x.Slot),plan.Values.OrderBy(x=>x.Slot));
         var occupants=items.ToDictionary(x=>x.Slot);
         foreach(var (from,to) in SlotPlanner.Swaps(items,plan))
@@ -77,44 +76,63 @@ public class CategorySortingTests
         db.Put("category/komadium","My supplies");Assert.Equal("My supplies",catalog.Category(item));
     }
 
-    [Fact]
-    public void SavedLayoutCannotDisplaceSuppliesAndKeepsDisplacedItems()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DetectedCrystalArrowsComeBeforeCompactPotions(bool category)
     {
-        Item[] current=[new(1,"Komadium",3),new(2,"Red Potion",4),new(18,"Exkuranum",2),new(25,"Emerald",5)];
-        var layout=new Dictionary<int,Item>{{49,current[0]},{50,current[1]},{51,current[2]},{3,current[3]}};
-        PotionSlots.Place(layout);
-        Assert.Equal(current[0],layout[1]);Assert.Equal(current[1],layout[2]);Assert.Equal(current[2],layout[3]);
-        Assert.Equal(current[3],layout[51]);Assert.Equal(current.Length,layout.Count);
-        PotionSlots.ValidateLocks(current,layout);Assert.NotEmpty(SlotPlanner.Swaps(current,layout));
+        Item[] items=[new(30,"Dual Crystal Arrows",1),new(8,"Red Potion",4),new(9,"Hemloch",3),new(10,"Wake Scroll",1)];
+        var plan=SlotPlanner.Sort(items,new HashSet<int>(),category);
+        Assert.Equal("Dual Crystal Arrows",plan[1].Name);Assert.Equal("Red Potion",plan[2].Name);Assert.Equal("Hemloch",plan[3].Name);
+        Assert.Equal("Wake Scroll",plan[12].Name);
+        Assert.Equal(items.OrderBy(x=>x.Slot),plan.Values.OrderBy(x=>x.Slot));
     }
 
     [Fact]
-    public void DragCannotReplaceALockedPotionButUnrelatedItemsCanMove()
+    public void TrinketOverflowConservesAllStacksInAFullInventory()
     {
-        Item[] current=[new(1,"Komadium",3),new(9,"Emerald",2)];
-        var valid=new Dictionary<int,Item>{{1,current[0]},{10,current[1]}};
-        PotionSlots.ValidateLocks(current,valid);
-        var invalid=new Dictionary<int,Item>{{1,current[1]},{9,current[0]}};
-        Assert.Throws<InvalidOperationException>(()=>PotionSlots.ValidateLocks(current,invalid));
+        var items=Enumerable.Range(1,59).Select(i=>new Item(i,i==17?"Red Potion":i<=20?"Wake Scroll":$"Item {i}",i)).ToArray();
+        var plan=SlotPlanner.Sort(items,new HashSet<int>{4,11},true);
+        Assert.Equal(59,plan.Count);Assert.Equal("Red Potion",plan[1].Name);
+        Assert.Equal(items.OrderBy(x=>x.Slot),plan.Values.OrderBy(x=>x.Slot));
+        Assert.Equal(items[3],plan[4]);Assert.Equal(items[10],plan[11]);
     }
 
     [Fact]
-    public void MissingPotionsDoNotShiftOtherHotkeysOrWasteFullInventorySpace()
+    public void MissingPotionsPackLeftInPriorityOrder()
     {
-        var plan=SlotPlanner.Sort([new(22,"Dibenomum",3),new(12,"Apple",4)],new HashSet<int>());
-        Assert.Equal("Dibenomum",plan[4].Name);Assert.Equal("Apple",plan[49].Name);
-        Assert.Equal(2,plan.Count);
+        var plan=SlotPlanner.Sort([new(22,"Dibenomum",3),new(12,"Apple",4),new(30,"Red Potion",5),new(41,"Hemloch",2)],new HashSet<int>());
+        Assert.Equal(new[]{"Red Potion","Dibenomum","Hemloch"},Enumerable.Range(1,3).Select(i=>plan[i].Name));
+        Assert.Equal("Apple",plan[49].Name);
+    }
+
+    [Fact]
+    public void TrinketsFillFirstRowFromRightAndNeverOverwritePotionsOrPins()
+    {
+        Item[] items=[new(21,"Wake Scroll",1),new(22,"Glowing Stone",1),new(23,"Nerve Stimulant",1),
+            new(31,"Red Potion",4),new(12,"Pinned sword",1)];
+        var plan=SlotPlanner.Sort(items,new HashSet<int>{12},true);
+        Assert.Equal("Red Potion",plan[1].Name);Assert.Equal(items[^1],plan[12]);
+        Assert.Equal(new[]{"Glowing Stone","Nerve Stimulant","Wake Scroll"},new[]{11,10,9}.Select(i=>plan[i].Name));
+        Assert.Equal(items.OrderBy(x=>x.Slot),plan.Values.OrderBy(x=>x.Slot));
     }
 
     [Theory]
-    [InlineData(1,"Komadium")]
-    [InlineData(2,"Red Potion")]
-    [InlineData(3,"Exkuranum")]
-    [InlineData(4,"Dibenomum")]
-    [InlineData(5,"Hemloch")]
-    public void MaintenanceProtectsAllFiveLockedSupplies(int slot,string name)
+    [InlineData("Wake Scroll")]
+    [InlineData("Glowing Stone")]
+    [InlineData("Nerve Stimulant")]
+    [InlineData("Vanishing Elixir")]
+    [InlineData("Sprint Potion")]
+    [InlineData("Monster Cloak")]
+    [InlineData("Dragon's Scale")]
+    public void VorlofTrinketsHaveTheirOwnCategory(string name)=>Assert.Equal("Trinkets",ItemCategories.Infer(name));
+
+    [Fact]
+    public void UnpinnedQuickPotionCanMoveButPinStillProtectsMaintenance()
     {
-        Assert.True(MaintenancePlan.Protected(new(slot,name,10),new HashSet<int>()));
-        Assert.False(MaintenancePlan.Protected(new(30,name,10),new HashSet<int>()));
+        var potion=new Item(1,"Komadium",3);
+        Assert.False(MaintenancePlan.Protected(potion,new HashSet<int>()));
+        Assert.True(MaintenancePlan.Protected(potion,new HashSet<int>{1}));
+        Assert.Single(SlotPlanner.Swaps([potion],new(){{9,potion}}));
     }
 }

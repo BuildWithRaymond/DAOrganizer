@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # DA Organizer
 
@@ -23,19 +23,19 @@ Find items across characters, arrange your inventory, and review what stays, ban
 - **One searchable collection.** Inventory, equipment and bank snapshots from every displayed character, grouped by category and item family.
 - **Know who has it.** Quantity badges combine matching items. Click a tile for owners, locations, slots and snapshot freshness. Opening details keeps your place in the grid.
 - **An inventory that makes sense.** The game's 12-column layout, drag-to-move, pinned slots, saved layouts and reviewed sorting with server confirmation.
-- **Five fixed potion slots.** Komadium, Red Potion, Exkuranum, Dibenomum and Hemloch take slots 1–5 when present. Other items group by type before name.
+- **Flexible quick slots.** Carried Dual Crystal Arrows take slot 1. Available quick potions pack from the left; trinkets fill row one from the right. Pin or unpin any slot, and move potions freely.
 - **Rules you control.** Keep, Junk and Auto-deposit are explicit choices. Cleanout and deposit runs show a review before starting.
-- **Bank snapshots and account updates.** Scan a nearby NPC, or use your own WorldLogs to travel to a bank. Background travel does not require the game to keep focus.
+- **Bank snapshots and account updates.** Read bank contents through a nearby NPC as soon as login completes. WorldLogs and bank travel are needed only for transfers; travel runs in the background.
 - **Local by default.** Snapshots stay in SQLite on your machine. Optional saved passwords use Windows Credential Manager.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/inventory.png" alt="Character inventory with five protected potion slots"/><br/><strong>Inventory, with protected quick slots</strong></td>
+<td width="50%"><img src="docs/screenshots/inventory.png" alt="Character inventory with game sprites and flexible quick slots"/><br/><strong>Inventory, with game sprites</strong></td>
 <td width="50%"><img src="docs/screenshots/item-details.png" alt="Item drawer with owners and locations"/><br/><strong>Every owner. Every location.</strong></td>
 </tr>
 </table>
 
-*Screenshots are actual app renders using fictional demo accounts and original vector illustrations. Live profiles load item sprites from your installed game; no game artwork is distributed here.*
+*Screenshots are actual app renders using fictional accounts and original Dark Ages sprites loaded from a local game installation. Raw game assets are not bundled. Game artwork remains the property of its respective owners.*
 
 ## Try it
 
@@ -49,7 +49,9 @@ Want to explore without a game installation?
 .\DAOrganizer.exe --demo
 ```
 
-Demo mode uses an in-memory collection. It cannot launch game clients, perform item operations or save passwords, and it never opens your real account database.
+Demo mode uses an in-memory collection and loads sprites from a local game installation when available. Set `DAORGANIZER_GAME_DATA` to a different game-data folder if needed. Without game files, item names are shown instead of substitute artwork.
+
+Demo mode cannot launch game clients, perform item operations or save passwords, and it never opens your real account database.
 
 **Current game support:** Windows x64 and the supported Dark Ages DATester 7.41 executable. The launcher checks its exact hash. Other builds are rejected. The app tracks clients it launches; it does not attach to existing clients.
 

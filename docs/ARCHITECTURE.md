@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 DA Organizer is a .NET 10 / Avalonia desktop application. Live game integration is Windows-specific.
 
@@ -19,17 +19,17 @@ flowchart LR
 
 `DAOrganizer.Game` owns the proxy session, serialized observation queue, tracked inventory and per-session action gate. Actions check rules and current state, send one protocol request and wait for the expected inventory change. Unconfirmed destructive actions are not retried. The native input layer is used for supported login/window operations; navigation uses protocol walking.
 
-`DAOrganizer.App` builds the interface in C# with shared Avalonia styles. Refreshes render observed state. Aggregate grids restore an item anchor after layout so opening the ownership drawer does not reset scrolling. `Ornaments.cs` draws original Celtic marks and fallback item illustrations. Live sprites are read from the installed game at runtime.
+`DAOrganizer.App` builds the interface in C# with shared Avalonia styles. Refreshes render observed state. Aggregate grids restore an item anchor after layout so opening the ownership drawer does not reset scrolling. `Ornaments.cs` draws original Celtic marks. Item sprites, including demo artwork, are read from the installed game at runtime; missing sprites use text.
 
 ## Data
 
 SQLite stores characters, snapshot state, item records and settings. Windows Credential Manager stores optional login secrets separately. Item identity is name, sprite and color. Category overrides are explicit settings; category inference never changes identity.
 
-Demo mode uses a separate in-memory store and explicit guards around game operations and credential changes. Screenshot generation invokes this same mode. No account profile or game data is included in the repository.
+Demo mode uses a separate in-memory store and explicit guards around game operations and credential changes. Screenshot generation invokes this same mode. No account profile or raw game files are included in the repository. Public screenshots depict original game sprites with fictional names and quantities.
 
 ## Tests
 
-Unit and replay tests use synthetic packets, including movement confirmations, bank actions, partial scans, cancellation, duplicates, protected slots and malformed data. Avalonia headless checks exercise real pointer drag/click behavior, scrolling, item rules and canceled previews. The gallery validates demo isolation and renders the shipping UI.
+Unit and replay tests use synthetic packets, including movement confirmations, bank actions, partial scans, cancellation, duplicates, manual pins, compact quick slots and malformed data. Avalonia headless checks exercise real pointer drag/click behavior, scrolling, item rules and canceled previews. The gallery validates demo isolation and renders the shipping UI.
 
 ## Extending the project
 

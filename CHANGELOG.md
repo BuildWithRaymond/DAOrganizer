@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0 ? Game sprites and flexible quick slots
+
+- Restored original game sprites in demo mode and replaced the public screenshots. Missing artwork shows item names; invented item drawings have been removed.
+- Available quick potions compact from slot 1 in priority order. Carried Dual Crystal Arrows take slot 1 first, regardless of class.
+- Vorlof-referenced trinkets fill row one from slot 12 leftward. Overflow and duplicate stacks are preserved.
+- Removed forced potion locks from drag, sorting, saved layouts and packet actions. Any slot can be pinned or unpinned; explicit pins override sorting preferences.
+- Account updates read banks through the nearest visible NPC after login without routes or walking. Marked deposits and withdrawals still travel to a bank.
+- Added regression coverage for compact sorting, pins, arrows, trinkets, manual potion movement and inn bank reads without WorldLogs.
+
 ## 0.14.0 — The Celtic Collection
 
 First public source release.

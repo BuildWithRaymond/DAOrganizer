@@ -19,7 +19,7 @@ public sealed record MaintenanceEntry(string Character,string Location,Item Item
 public sealed record MaintenanceResult(string Character,string Item,string Action,string Result);
 public static class MaintenancePlan
 {
-    public static bool Protected(Item item,ISet<int> pins)=>pins.Contains(item.Slot)||PotionSlots.Locked(item);
+    public static bool Protected(Item item,ISet<int> pins)=>pins.Contains(item.Slot);
     public static IReadOnlyList<MaintenanceEntry> Build(IEnumerable<StoredItem> items,ItemRules rules,ItemAction action,Func<string,HashSet<int>> pins)
     {
         if(action==ItemAction.Keep)return [];

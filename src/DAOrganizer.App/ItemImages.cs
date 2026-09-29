@@ -11,7 +11,14 @@ public sealed class ItemImages:IDisposable
     private GameSpriteData? _data;
     private readonly Dictionary<(uint,byte),WriteableBitmap> _atlases=[];
     private readonly Dictionary<(ushort,byte),IImage?> _images=[];
-    public async Task Load(string path)=>_data=await Task.Run(()=>GameSpriteDataLoader.Load(Path.GetDirectoryName(path)!));
+    public bool Loaded=>_data?.Items!=null;
+    public async Task Load(string path)
+    {
+        var data=await Task.Run(()=>GameSpriteDataLoader.Load(Path.GetDirectoryName(path)!));
+        if(data.Items==null)throw new InvalidDataException("No item sprites found in the selected game folder.");
+        foreach(var atlas in _atlases.Values)atlas.Dispose();
+        _atlases.Clear();_images.Clear();_data=data;
+    }
     public IImage? Get(ushort sprite,byte color)
     {
         try{return GetImage(sprite,color);}

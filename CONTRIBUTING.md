@@ -17,7 +17,7 @@ Read [Architecture](docs/ARCHITECTURE.md) for project boundaries and [the design
 
 For protocol or item-operation changes, include a synthetic regression case. Preserve server confirmation, operation cancellation and the one-attempt rule for destructive actions. Never record real login packets or credentials in fixtures.
 
-For UI changes, run the headless interaction checks and gallery. Inspect normal and compact window sizes, keyboard focus, empty results and the ownership drawer. Use demo data for screenshots. Keep the inventory's 12-column geometry and the five protected potion slots.
+For UI changes, run the headless interaction checks and gallery. Inspect normal and compact window sizes, keyboard focus, empty results and the ownership drawer. Use demo data for screenshots. Keep the inventory's 12-column geometry and flexible quick-slot ordering and reversible manual pins.
 
 Category corrections should include an item name, the proposed category/family and a public reference when available. A small factual mapping is sufficient; do not copy another site's artwork or bulk content.
 

@@ -1,4 +1,4 @@
-﻿# Getting started
+# Getting started
 
 ## Install or update
 
@@ -11,7 +11,7 @@ To explore without a game installation, run `DAOrganizer.exe --demo`. The six fi
 ## Set up your game
 
 1. Open **Settings**. Select the supported `Darkages.exe` from your DATester 7.41 installation. The launcher verifies its SHA-256 hash before launch.
-2. Set **WorldLogs folder** to your own map/route data. Walking to banks requires this data. No WorldLogs are shipped here.
+2. Set **WorldLogs folder** to your own map/route data. Deposits and withdrawals travel to banks and require this data. Bank reads near an NPC do not. No WorldLogs are shipped here.
 3. Use **Add character**. Passwords are optional; if supplied, they are stored in Windows Credential Manager, never in SQLite.
 4. Select the character and choose **Launch client**. Inventory and equipment update while connected through the organizer.
 
@@ -23,21 +23,15 @@ The supported executable SHA-256 is defined in `src/DAOrganizer.Game/ClientLaunc
 
 Inventory matches the game: 12 columns and five rows, with gold at position 60. Drag movable items to swap. Right-click to pin a slot. Sorting and saved-layout restore show a preview before sending moves, and each swap waits for confirmation.
 
-When present, one stack of each potion is placed in its fixed slot:
+Sorting places one carried stack of each quick potion from the left in this order: Komadium, Red Potion, Exkuranum, Dibenomum, Hemloch. Missing potions leave no gaps. If Komadium is absent, Red Potion takes slot 1 when carried. Detected Dual Crystal Arrows take slot 1 first, and potions start in slot 2. No class detection is required.
 
-| Slot | Potion |
-| --- | --- |
-| 1 | Komadium |
-| 2 | Red Potion |
-| 3 | Exkuranum |
-| 4 | Dibenomum |
-| 5 | Hemloch |
+Trinkets from [Vorlof's list](https://vorlof.com/trinkets.html) fill the first row from slot 12 leftward in alphabetical order. Overflow joins the remaining inventory. Other items fill bottom rows first, left to right; category sorting keeps families together. Every duplicate stack is retained.
 
-These positions override conflicting pins; other pins stay fixed. Missing potions do not shift the hotkeys. Correctly placed potions are protected from organizer moves and maintenance. Duplicate stacks are retained. Other sorted items fill bottom rows first, left to right. Sorting groups category, family, name, then original slot. Manual category overrides remain available in inventory item details.
+These are sorting preferences, not locks. Drag potions normally. Right-click any slot to **Pin slot** or **Unpin slot**. Explicit pins take priority, including over arrow/potion placement. Applying a saved layout restores your chosen positions without forcing quick-slot rules. An unpinned item explicitly marked Junk or Auto-deposit is eligible for that action, including potions.
 
 ## Read bank contents
 
-At a visible NPC, use **Scan nearby**. You can also open **Withdraw Items** in the game. A complete response saves a snapshot. **Scan Bank** travels to a selected destination using your WorldLogs routes.
+Use **Scan Bank** near any visible NPC, including an innkeeper. The organizer requests the list without walking or transferring anything, and no WorldLogs are required. A complete response saves a snapshot. **Travel to bank** is a separate action for visiting a selected bank. Automatic deposits and withdrawals still travel to a bank before transferring items.
 
 A correlated withdrawal-list request with no response for 10 seconds records an empty bank. Unrelated dialogs, malformed responses, movement and connection loss remain failures and preserve previous data.
 
@@ -49,9 +43,9 @@ Item rules apply to matching variants across characters:
 - **Auto-deposit:** included in **Deposit marked** and account-update deposit passes. There is no inactivity timer or inferred 30-day rule.
 - **Junk:** included in **Junk cleanout**. Review and uncheck any stack you do not want dropped.
 
-Ground drops can be lost. Equipment, pins and designated potion stacks are excluded. Bank junk is withdrawn one unit at a time and then dropped. A failed or unconfirmed drop stops further attempts for that item on that character. There is no automatic transfer/drop retry.
+Ground drops can be lost. Equipment and explicitly pinned inventory slots are excluded. Bank junk is withdrawn one unit at a time and then dropped. A failed or unconfirmed drop stops further attempts for that item on that character. There is no automatic transfer/drop retry.
 
-**Update selected accounts** logs into selected offline accounts one at a time, scans the nearest reachable bank, deposits marked items, requests safe logout and closes only its newly created client after success. Existing connected clients are skipped. A failed operation leaves its client open. **Stop**, manual game actions, movement, damage and connection errors interrupt operations. Travel continues when the game loses focus.
+**Update selected accounts** logs into selected offline accounts one at a time, reads the bank through a nearby NPC, travels to a bank only if marked deposits are needed, requests safe logout and closes only its newly created client after success. Existing connected clients are skipped. A failed operation leaves its client open. **Stop**, manual game actions, movement, damage and connection errors interrupt operations. Travel continues when the game loses focus.
 
 ## Data and backups
 

@@ -57,7 +57,7 @@ public sealed partial class MainWindow
             _app.RequireLiveProfile();
             if(_app.Busy)throw new InvalidOperationException("Stop the current action before changing settings.");
             _app.ClientPath=executable.Text?.Trim()??"";_app.WorldLogsPath=world.Text?.Trim()??"";
-            _app.SaveSettings();await _app.LoadWorld();_banks.ItemsSource=_app.Banks();window.Close();_status.Text=_app.WorldStatus;
+            _app.SaveSettings();await LoadArtwork();await _app.LoadWorld();_banks.ItemsSource=_app.Banks();window.Close();_status.Text=_app.WorldStatus;
         },"primary"));window.Content=panel;await window.ShowDialog(this);
     }
     private async Task Sort(bool category)
@@ -87,7 +87,6 @@ public sealed partial class MainWindow
             desired[target.Slot]=item;available.Remove(item);
         }
         foreach(var item in available){var slot=SlotPlanner.BottomFirstSlots().First(x=>!desired.ContainsKey(x)&&!pins.Contains(x));desired[slot]=item;}
-        PotionSlots.Place(desired);
         await PreviewLayout(session,desired,"Apply saved layout",missing.Count==0?null:"Missing items: "+string.Join(", ",missing));
     }
     private async Task PreviewLayout(GameSession session,Dictionary<int,Item> desired,string title,string? note=null)
@@ -95,7 +94,7 @@ public sealed partial class MainWindow
         var moves=SlotPlanner.Swaps(session.Inventory(),desired);
         if(moves.Count==0){_status.Text="Inventory already matches.";return;}
         var window=DialogWindow(title,430);var panel=DialogPanel();
-        panel.Children.Add(Text($"{moves.Count} slot swaps",20));panel.Children.Add(Text("Potion slots take priority over pins: 1 Komadium, 2 Red Potion, 3 Exkuranum, 4 Dibenomum, 5 Hemloch, when carried. Other pins stay put. Each move waits for game confirmation.",12,true));
+        panel.Children.Add(Text($"{moves.Count} slot swaps",20));panel.Children.Add(Text("Manual pins stay put. Sorting packs quick potions from the left and trinkets from the right; carried Dual Crystal Arrows take slot 1. Saved layouts keep your chosen positions. Each move waits for game confirmation.",12,true));
         if(note!=null)panel.Children.Add(Text(note,12,true));
         panel.Children.Add(new ScrollViewer{MaxHeight=240,Content=Text(string.Join("\n",moves.Select(x=>$"Slot {x.From:00} → {x.To:00}")),13)});
         var apply=new Button{Content="Apply changes"};apply.Classes.Add("primary");var accepted=false;apply.Click+=(_,_)=>{accepted=true;window.Close();};panel.Children.Add(apply);window.Content=panel;await window.ShowDialog(this);

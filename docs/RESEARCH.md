@@ -175,3 +175,16 @@ The Avalonia interface now uses obsidian surfaces, warm gold accents, Georgia he
 `--demo` builds six fictional accounts in an in-memory database. It skips game artwork and WorldLogs loading and blocks live operations, account updates, settings persistence and credential writes. The gallery verifies these boundaries and renders the actual interface at normal and minimum sizes. Each interaction-check run creates a unique synthetic profile, avoiding contamination from a previous run's saved rules.
 
 The source release includes MIT licensing, retained dependency attribution, contribution/security guidance, issue templates, Windows CI, and portable packaging that resolves license files from the restored package folders and runtime version. Public screenshots contain only the demo collection and original vector drawings. User profiles, game files, WorldLogs and build outputs are excluded from source control.
+
+
+## v15: original sprites, flexible quick slots and bank reads at login
+
+The user revised the fixed-slot requirement: quick potions pack from slot 1 in their established order, skipping missing types. A carried Dual Crystal Arrows stack takes slot 1 first regardless of class, so potions start at 2. Explicit pins override sorting preferences. The old potion lock was removed from UI dragging, saved-layout application and the packet action path; manual pins remain reversible. Trinkets fill the first row from slot 12 leftward. Duplicate stacks and overflow remain in the layout.
+
+Factual trinket names were checked against https://vorlof.com/trinkets.html, including Wake Scroll, Glowing Stone, Nerve Stimulant and Vanishing Elixir. The app does not copy its descriptions or artwork. Observed short names for the two/three-move combo scrolls are also recognized.
+
+The invented item glyphs were removed. The demo now uses selected factual sprite/color identifiers and reads original sprites from a local game installation. Public screenshots use fictional characters and quantities; no account identities, ownership records or raw game assets are published. The gallery's `--require-sprites` mode verifies every demo sprite is available before capture. CI remains able to run without a game installation using text fallbacks.
+
+Account refresh waits for a visible NPC after login and sends the existing direct withdrawal-list request, without requiring WorldLogs or walking. An innkeeper is not saved as a banker preference. If explicitly marked, unpinned items need depositing, bank travel occurs before the transfer. Manual maintenance also retains bank travel for deposits and withdrawals. The bank-scan button now reads locally; explicit travel remains a separate action.
+
+Validation: 161 unit/replay checks, including full inventories, compact potion gaps, arrow priority, trinket overflow, pin preservation, a confirmed manual potion move, an innkeeper read with no routes, and refusal to deposit there without a bank route. Headless interaction checks cover reversible potion pins and preserve drawer scrolling. The original-sprite gallery checks all demo item art. No live inventory actions were performed during this change.

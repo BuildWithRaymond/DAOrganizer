@@ -6,10 +6,34 @@ public sealed partial class Organizer
     public Dictionary<string,AccountProgress> QueueProgress {get;}=new(StringComparer.OrdinalIgnoreCase);
     public string QueueStatus {get;private set;}="";
     public bool QueueRunning {get;private set;}
+    public async Task RefreshBank(GameSession session,bool autoDeposit,CancellationToken token)
+    {
+        RequireLiveProfile();
+        if(!session.Ready)throw new InvalidOperationException("Wait for login and a complete inventory before scanning.");
+        try{await GameSession.WaitUntil(()=>session.Mundanes().Length>0||session.Error!=null,TimeSpan.FromSeconds(5),token);}
+        catch(TimeoutException){throw new InvalidOperationException("No NPC is visible. Approach an NPC and scan again; saved bank contents were retained.");}
+        if(session.Error!=null)throw new InvalidOperationException(session.Error);
+        await session.ScanNearbyBank(null,token);
+        var rows=session.Inventory().Select(x=>new StoredItem(session.Name,"Inventory",x,DateTimeOffset.UtcNow));
+        if(autoDeposit&&MaintenancePlan.Build(rows,Rules,ItemAction.AutoDeposit,Pins).Count>0)
+        {
+            await TravelToBank(session,token);
+            await AutoDeposit(session,token);
+        }
+    }
+    private async Task TravelToBank(GameSession session,CancellationToken token)
+    {
+        if(World==null)throw new InvalidOperationException("Load WorldLogs before depositing or withdrawing items at a bank.");
+        var route=BankRoutes.Closest(World,session.MapId,session.Position);
+        var destination=new BankDestination(route.Map.Id,route.Map.Name,Store.Get<string>("banker/"+route.Map.Id));
+        using var travel=CancellationTokenSource.CreateLinkedTokenSource(token);travel.CancelAfter(TimeSpan.FromMinutes(10));
+        void Damaged()=>travel.Cancel();session.Damaged+=Damaged;
+        try{await new Navigation(World,Path.GetDirectoryName(ClientPath)!).Travel(session,destination,travel.Token,route.Portals);}
+        finally{session.Damaged-=Damaged;}
+    }
     public async Task UpdateAccounts()
     {
         RequireLiveProfile();
-        if(World==null)throw new InvalidOperationException("Load WorldLogs before updating accounts.");
         var names=Store.Characters().Where(x=>Accounts.UpdateEnabled(x.Name)).Select(x=>x.Name).ToArray();
         if(names.Length==0)throw new InvalidOperationException("Select characters in the Update column first.");
         var missing=names.Where(x=>Session(x)==null&&!CredentialVault.Exists(x)).ToArray();
@@ -46,20 +70,7 @@ public sealed partial class Organizer
             if(session.Error!=null)throw new InvalidOperationException(session.Error);
             if(!string.Equals(session.Name,name,StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Unexpected character logged in. Queue stopped.");
         }
-        public async Task ScanBank(CancellationToken token)
-        {
-            var route=BankRoutes.Closest(app.World!,session.MapId,session.Position);
-            var destination=new BankDestination(route.Map.Id,route.Map.Name,app.Store.Get<string>("banker/"+route.Map.Id));
-            using var scan=CancellationTokenSource.CreateLinkedTokenSource(token);
-            scan.CancelAfter(TimeSpan.FromMinutes(10));
-            void Damaged()=>scan.Cancel();session.Damaged+=Damaged;
-            try
-            {
-                await new Navigation(app.World!,Path.GetDirectoryName(app.ClientPath)!).Travel(session,destination,scan.Token,route.Portals);
-                if(autoDeposit)await app.AutoDeposit(session,scan.Token);
-            }
-            finally{session.Damaged-=Damaged;}
-        }
+        public Task ScanBank(CancellationToken token)=>app.RefreshBank(session,autoDeposit,token);
         public Task Logout(CancellationToken token)=>session.SafeLogout(token);
         public async Task Close(CancellationToken token)
         {

@@ -25,7 +25,11 @@ public sealed partial class Organizer:IDisposable
         ClientPath=Store.Get<string>("client")??ClientLauncher.DefaultClient;
         WorldLogsPath=Store.Get<string>("worldLogs")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Dark Ages","WorldLogs");
         foreach(var character in Store.Characters())Store.MarkStale(character.Name);
-        if(demo)DemoCollection.Seed(this);
+        if(demo)
+        {
+            if(Environment.GetEnvironmentVariable("DAORGANIZER_GAME_DATA") is {Length:>0} folder)ClientPath=Path.Combine(folder,"Darkages.exe");
+            DemoCollection.Seed(this);
+        }
     }
     public async Task LoadWorld()
     {

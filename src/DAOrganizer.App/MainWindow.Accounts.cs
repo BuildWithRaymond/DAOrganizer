@@ -37,7 +37,7 @@ public sealed partial class MainWindow
     {
         var window=DialogWindow("Account manager",960);var panel=DialogPanel();
         panel.Children.Add(Text("Account manager",23));
-        panel.Children.Add(Text("One pass: log in → nearest bank/storage → save items → safe logout. Travel works in the background. Failed clients stay open. Existing connected characters are skipped.",13,true));
+        panel.Children.Add(Text("One pass: log in → nearby NPC → save items → safe logout. Bank reads stay at the inn; marked deposits travel to a bank. Failed clients stay open. Existing connected characters are skipped.",13,true));
         var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
         var table=new StackPanel{Spacing=5};var message=Text(_app.QueueStatus,12,true);
         var resultLabels=new Dictionary<string,TextBlock>(StringComparer.OrdinalIgnoreCase);

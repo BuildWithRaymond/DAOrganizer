@@ -33,7 +33,7 @@ public sealed partial class Organizer
                     {
                         QueueStatus=$"{character.Key}: preparing item maintenance";
                         if(existing==null)await client.Login(token);
-                        if(character.Any(x=>x.Location=="Bank"||x.Action==ItemAction.AutoDeposit))await client.ScanBank(token);
+                        if(character.Any(x=>x.Location=="Bank"||x.Action==ItemAction.AutoDeposit))await TravelToBank(session,token);
                         await MaintenanceRunner.Run(session,character.ToArray(),Rules,()=>Pins(character.Key),RecordMaintenance,token);
                         if(character.Any(x=>x.Location=="Bank"||x.Action==ItemAction.AutoDeposit))await session.ScanNearbyBank(null,token);
                         if(existing==null){await client.Logout(token);await client.Close(token);}

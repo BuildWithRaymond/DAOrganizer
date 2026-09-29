@@ -1,12 +1,14 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 namespace DAOrganizer.Core;
 
 public static class ItemCategories
 {
-    public static readonly string[] Names=["Weapons","Armor","Accessories","Consumables","Materials","Books & scrolls","Tools","Cosmetics","Pets","Other"];
+    public static readonly string[] Names=["Weapons","Armor","Accessories","Trinkets","Consumables","Materials","Books & scrolls","Tools","Cosmetics","Pets","Other"];
     // Selected game names and families checked against Vorlof, 2026-09-29.
     // Local classification rules, not a complete item database. See docs/RESEARCH.md.
     private static readonly (string Category,string Family,string Names)[] NamedGroups=[
+        // Factual names from vorlof.com/trinkets.html; descriptions/artwork are not copied.
+        ("Trinkets","Trinkets","Rest Cloak|Map of Ant Tunnels|Map of Ant Guardian Tunnels|Map of Royal Ant Guardian Tunnels|Mantid Scent|Potent Mantid Scent|Insect Cloak|Monster Cloak|Fungus Beetle Extract|Beetle Aid|Sleigh Mount|Headless Horseman Mount|Santa Costume|Tank Mount|Deerstalker Mount|Elemus Mount|Grime Scent|Assassin's Scroll|Blackstar Resting Cloak|Monster Call|Muscle Stimulant|Dark Ring Spell|Dragon's Fire|Dragon's Scale|Cursed Notes|Wake Scroll|Bard's Notes|Three Move Combo Scroll|Two Move Combo Scroll|Three Move Combo|Two Move Combo|Damage Scroll|Sprint Potion|Vanishing Elixir|Glowing Stone|Nerve Stimulant"),
         ("Consumables","Potions","Komadium|Red Potion|Exkuranum|Dibenomum|Hemloch|Satchel of Hemloch|Kurum|Sposen|Carvien|fior srad|fior athar|fior sal|fior creag"),
         ("Consumables","Food & drink","Papaya|Apricot|Pafrica|Rambutan|Banas|Tangerines|Tentacle|Starfish Arm|Green Tentacle|Red Tentacle|Cheese|Spices|Liver|Purple Whopper|Bee's Honey|Pure Honey|Royal Honey|Raw Honey|Mold|Small Mold|Herring|Sardine|Anchovy|Belladonna|Baguette|Mouldy Baguette|Marinade|Frosting|Broth|Flour|Salt"),
         ("Consumables","Mass items","Anarchist's Tome|Ceannlaidir's Valor|Embrace of Glioca|Deoch's Flame|Gramail's Spirit|Fiosachd's Gift|Luathas' Spectacles|Footstep's of Cail"),
@@ -78,6 +80,7 @@ public static class ItemCategories
         if(Known.TryGetValue(item.Name.Trim(),out var known)&&known.Category==item.Category)return known.Family;
         return Rules.FirstOrDefault(x=>x.Category==item.Category&&x.Pattern.IsMatch(item.Name)).Family??"General";
     }
+    public static bool IsTrinket(Item item)=>item.Category=="Trinkets"||item.Category=="Other"&&Infer(item.Name)=="Trinkets";
     public static string Label(Item item)=>Family(item) is var family&&family!="General"?$"{item.Category} · {family}":item.Category;
     public static string Equipment(int slot)=>slot switch{1=>"Weapons",>=2 and <=4 or >=9 and <=13=>"Armor",>=5 and <=8=>"Accessories",>=14 and <=18=>"Cosmetics",_=>"Other"};
     public static int Order(string category){var index=Array.IndexOf(Names,category);return index<0?Names.Length-1:index==Names.Length-1?Names.Length:index;}

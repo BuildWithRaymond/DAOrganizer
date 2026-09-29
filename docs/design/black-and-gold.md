@@ -1,4 +1,4 @@
-﻿# Black & gold design direction
+# Black & gold design direction
 
 The reference is a dense native desktop companion: near-black surfaces, antique gold details, serif headings, restrained separators and readable gameplay data. DA Organizer remains an inventory tool, with its existing game operations preserved.
 
@@ -21,12 +21,12 @@ An original Celtic knot seal and interlaced gold borders frame the collection. N
 - Character rail: emblem, compact character identities, clear selection and settings.
 - Workspace: display title, live/saved context, search, tabs and adaptable command bar.
 - Collection: category/family dividers, dark item tiles, quantity medallions and a detailed ownership drawer.
-- Inventory: game-aligned 12 by 5 grid, original fallback illustrations, gold protected potion slots and compact key.
+- Inventory: game-aligned 12 by 5 grid, original game sprites, reversible gold pin markers and a compact sorting guide.
 - Dialogs: same palette, deliberate spacing, readable review tables and destructive-action styling.
 
 ## Public release
 
-MIT for original code. Preserve upstream licenses and identify local modifications. No saved account database, passwords, private paths, game files or extracted sprites in Git. Demo mode uses fictional characters and original fallback illustrations in an in-memory profile, and cannot run game operations or write credentials. Screenshots are genuine renders of this mode.
+MIT for original code. Preserve upstream licenses and identify local modifications. No saved account database, passwords, private paths, game files or extracted sprites in Git. Demo mode uses fictional characters and sprites from a local game installation in an in-memory profile, and cannot run game operations or write credentials. Screenshots are genuine renders of this mode.
 
 ## Acceptance
 

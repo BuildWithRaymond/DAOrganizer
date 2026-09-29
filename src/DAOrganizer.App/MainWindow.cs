@@ -14,6 +14,8 @@ public sealed partial class MainWindow:Window
 {
     private readonly Organizer _app;
     private readonly ItemImages _images=new();
+    public Task ArtworkReady {get;private set;}=Task.CompletedTask;
+    public bool HasItemSprites=>_images.Loaded;
     private readonly StackPanel _characters=new(){Spacing=4};
     private readonly TextBox _search=new(){Watermark="Search your collection…",Width=360};
     private readonly TextBlock _title=Text("Your characters",32),_detail=Text("Launch a client to begin.",12,true),_status=Text("Ready",11,true);
@@ -63,17 +65,31 @@ public sealed partial class MainWindow:Window
         Grid.SetRow(_tabs,2);main.Children.Add(_tabs);_toolbar.Margin=new(0,12,0,12);Grid.SetRow(_toolbar,3);main.Children.Add(_toolbar);
         Grid.SetRow(_body,4);main.Children.Add(_body);
         var statusRow=new Grid{ColumnDefinitions=new("*,Auto")};statusRow.Children.Add(_status);
-        var edition=Text(app.IsDemo?"DEMO COLLECTION  ·  FICTIONAL ACCOUNTS":"LOCAL COLLECTION  ·  v0.14",9,true);edition.LetterSpacing=1;Grid.SetColumn(edition,1);statusRow.Children.Add(edition);
+        var edition=Text(app.IsDemo?"DEMO COLLECTION  ·  FICTIONAL ACCOUNTS":"LOCAL COLLECTION  ·  v0.15",9,true);edition.LetterSpacing=1;Grid.SetColumn(edition,1);statusRow.Children.Add(edition);
         var footer=new Border{Background=Brush("#0D0E10"),BorderBrush=Brush("#30291D"),BorderThickness=new(0,1,0,0),Padding=new(20,10),Child=statusRow};Grid.SetRow(footer,1);Grid.SetColumnSpan(footer,2);root.Children.Add(footer);Content=root;
         _timer.Tick+=(_,_)=>Refresh();_timer.Start();
         Opened+=async(_,_)=>
         {
-            if(_app.IsDemo){_status.Text="Demo mode · explore freely; game actions are disabled.";return;}
-            await Run(async()=>{await _app.LoadWorld();_banks.ItemsSource=_app.Banks();_status.Text=_app.WorldStatus;});
-            try{await _images.Load(_app.ClientPath);Refresh(true);}catch(Exception ex){_status.Text="Item icons unavailable: "+ex.Message;}
+            ArtworkReady=LoadArtwork();
+            if(_app.IsDemo)_status.Text="Demo collection - game actions are disabled.";
+            else await Run(async()=>{await _app.LoadWorld();_banks.ItemsSource=_app.Banks();_status.Text=_app.WorldStatus;});
+            await ArtworkReady;
         };
         Closing+=OnClosing;Closed+=(_,_)=>{_timer.Stop();_images.Dispose();};
         Refresh(true);
+    }
+    private async Task LoadArtwork()
+    {
+        try{await _images.Load(_app.ClientPath);Refresh(true);}
+        catch(Exception){_status.Text="Game sprites unavailable. Choose your game installation in Settings; item names remain visible.";}
+    }
+    private Control ItemArtwork(Item item,double size)
+    {
+        var source=_images.Get(item.Sprite,item.Color);
+        if(source==null)return new TextBlock{Text=item.Name,FontSize=10,Foreground=Brush("#98999F"),TextWrapping=TextWrapping.Wrap,
+            TextTrimming=TextTrimming.CharacterEllipsis,TextAlignment=TextAlignment.Center,MaxHeight=size,VerticalAlignment=VerticalAlignment.Center};
+        var image=new Image{Source=source,MaxWidth=size,MaxHeight=size,Stretch=Stretch.Uniform,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+        RenderOptions.SetBitmapInterpolationMode(image,Avalonia.Media.Imaging.BitmapInterpolationMode.None);return image;
     }
     private static IBrush Brush(string color)=>new SolidColorBrush(Color.Parse(color));
     private static TextBlock Text(string text,double size=13,bool muted=false)=>new(){Text=text,FontSize=size,FontFamily=new(size>=20?"Georgia":"Segoe UI"),Foreground=muted?Brush("#98999F"):Brush("#F2E8D2"),TextWrapping=TextWrapping.Wrap};
@@ -139,8 +155,8 @@ public sealed partial class MainWindow:Window
         }
         else if(_location=="Bank")
         {
-            _toolbar.Children.Add(_banks);_toolbar.Children.Add(Button("Scan Bank",ScanBank,"primary"));
-            _toolbar.Children.Add(Button("Scan nearby",()=>_app.RunOperation(t=>RequireSession().ScanNearbyBank(null,t))));
+            _toolbar.Children.Add(Button("Scan Bank",()=>_app.RunOperation(t=>_app.RefreshBank(RequireSession(),false,t)),"primary"));
+            _toolbar.Children.Add(_banks);_toolbar.Children.Add(Button("Travel to bank",ScanBank));
             var rows=RenderRows(items.Select(x=>new StoredItem(_selected,"Bank",x,DateTimeOffset.MinValue)).ToArray(),false);
             var panel=new DockPanel();var summary=Text($"{freshness} · {items.Length:N0} entries. Refresh at banker after deposits or withdrawals.",12,true);summary.Margin=new(0,0,0,12);DockPanel.SetDock(summary,Dock.Top);panel.Children.Add(summary);panel.Children.Add(items.Length==0?Empty(freshness=="Current"?"Bank empty":"Bank not yet captured",freshness=="Current"?"No stored items found at the last bank scan.":"Choose a destination and Scan Bank, or open Withdraw Items in the game."):rows);_body.Content=panel;
         }
@@ -181,12 +197,12 @@ public sealed partial class MainWindow:Window
         for(var slot=1;slot<=60;slot++)
         {
             var index=slot;var item=slots.GetValueOrDefault(slot);
-            var locked=item!=null&&PotionSlots.Locked(item);
+            var locked=pins.Contains(slot);
             var button=new SlotButton{CanDrag=item!=null&&slot<60&&!locked,MinHeight=48,Tag=slot,HorizontalAlignment=HorizontalAlignment.Stretch,VerticalAlignment=VerticalAlignment.Stretch,HorizontalContentAlignment=HorizontalAlignment.Stretch,VerticalContentAlignment=VerticalAlignment.Stretch};button.Classes.Add("slot");
             if(locked)button.Classes.Add("protected");
             var content=new Grid{RowDefinitions=new("14,*,15")};
             content.Children.Add(Text(slot==60?"GOLD":$"{slot:00}"+(!locked&&pins.Contains(slot)?" •":""),10,true));
-            if(locked){var marker=Text("LOCK",8,true);Grid.SetRow(marker,2);content.Children.Add(marker);}
+            if(locked){var marker=Text("PIN",8,true);Grid.SetRow(marker,2);content.Children.Add(marker);}
             if(slot==60)
             {
                 var amount=(_app.Session(_selected)?.Gold??_app.Store.Get<uint>("gold/"+_selected!.ToLowerInvariant())).ToString("N0");
@@ -197,32 +213,24 @@ public sealed partial class MainWindow:Window
             {
                 var transfer=Text("?",10,true);transfer.HorizontalAlignment=HorizontalAlignment.Right;
                 ToolTip.SetTip(transfer,"Drop / trade: unknown. The server does not include this permission in inventory data.");content.Children.Add(transfer);
-                var image=_images.Get(item.Sprite,item.Color);
-                if(image!=null){var icon=new Image{Source=image,MaxWidth=34,MaxHeight=34};Grid.SetRow(icon,1);content.Children.Add(icon);}
-                else{var glyph=new ItemGlyph(item){Width=34,Height=34,HorizontalAlignment=HorizontalAlignment.Center};Grid.SetRow(glyph,1);content.Children.Add(glyph);}
+                var icon=ItemArtwork(item,34);Grid.SetRow(icon,1);content.Children.Add(icon);
                 var count=Text(item.Quantity>1?item.Quantity.ToString("N0"):"",10);count.HorizontalAlignment=HorizontalAlignment.Right;Grid.SetRow(count,2);content.Children.Add(count);
-                ToolTip.SetTip(button,$"{item.Name}\n{ItemCategories.Label(item)}\nQuantity: {item.Quantity:N0}\nDrop / trade: unknown\nSlot {slot}"+(locked?" · locked potion":pins.Contains(slot)?" · pinned":""));
+                ToolTip.SetTip(button,$"{item.Name}\n{ItemCategories.Label(item)}\nQuantity: {item.Quantity:N0}\nDrop / trade: unknown\nSlot {slot}"+(locked?" · pinned":pins.Contains(slot)?" · pinned":""));
             }
-            else if(PotionSlots.Name(slot) is {} supply)ToolTip.SetTip(button,$"Slot {slot}: {supply} goes here when carried and sorted.");
+
             button.Content=content;
             if(slot<60)
             {
                 button.Click+=async(_,_)=>{if(item!=null)await Run(()=>ItemDetail(item));};
-                var pin=new MenuItem{Header=locked?"Locked potion slot":pins.Contains(slot)?"Unpin slot":"Pin slot",IsEnabled=!locked};pin.Click+=(_,_)=>{_app.TogglePin(_selected!,index);Refresh(true);};button.ContextMenu=new(){ItemsSource=new[]{pin}};
+                var pin=new MenuItem{Header=pins.Contains(slot)?"Unpin slot":"Pin slot"};pin.Click+=(_,_)=>{_app.TogglePin(_selected!,index);Refresh(true);};button.ContextMenu=new(){ItemsSource=new[]{pin}};
                 WireDrag(button,index,item);
             }
             grid.Children.Add(button);
         }
         var panel=new DockPanel();var guide=new StackPanel{Spacing=10,Margin=new(3,16,3,0)};
         guide.Children.Add(new CelticRule{Height=8,Opacity=.6});
-        var quickSlots=new Grid{ColumnDefinitions=new("*,*,*,*,*")};
-        for(var i=1;i<=5;i++)
-        {
-            var label=Text($"{i:00}  {PotionSlots.Name(i)}",11,true);label.Foreground=Brush("#C3A464");
-            Grid.SetColumn(label,i-1);quickSlots.Children.Add(label);
-        }
-        guide.Children.Add(quickSlots);
-        guide.Children.Add(Text("Quick slots lock when carried. Drag other items to move; right-click to pin. Sorting fills bottom rows. ? = drop / trade unknown.",11,true));
+        guide.Children.Add(Text("Quick potions fill from the left; trinkets fill from the right. Carried Dual Crystal Arrows take slot 1.",11,true));
+        guide.Children.Add(Text("Drag to move. Right-click to pin or unpin any slot. Manual pins override sorting preferences.",11,true));
         DockPanel.SetDock(guide,Dock.Bottom);panel.Children.Add(guide);panel.Children.Add(grid);_body.Content=panel;
     }
     private void WireDrag(SlotButton button,int slot,Item? item)

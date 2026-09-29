@@ -11,7 +11,7 @@ using DAOrganizer.Core;
 var output=Path.GetFullPath(args.FirstOrDefault()??"artifacts/ui-checks");
 Directory.CreateDirectory(output);
 AppBuilder.Configure<App>().UseSkia().UseHeadless(new(){UseHeadlessDrawing=false}).SetupWithoutStarting();
-if(args.Contains("--gallery")){Gallery.Run(output);return;}
+if(args.Contains("--gallery")){Gallery.Run(output,args.Contains("--require-sprites"));return;}
 // A new profile keeps previous rule/filter checks from contaminating a repeated run.
 using var app=new Organizer(Path.Combine(output,"profiles",Guid.NewGuid().ToString("N")));
 app.Store.SaveSnapshot("Example","Inventory",[
@@ -40,8 +40,19 @@ void Click(string label)
 Capture("inventory");
 var slots=window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.UniformGrid>().Single();
 if(slots.Columns!=12||slots.Rows!=5||slots.Children.Count!=60)throw new Exception("Inventory geometry must match the game: 12 × 5.");
-if(slots.Children.Take(5).Cast<SlotButton>().Any(x=>x.CanDrag))throw new Exception("Fixed potions must not be draggable.");
-if(window.GetVisualDescendants().OfType<TextBlock>().Count(x=>x.Text=="LOCK")!=5)throw new Exception("Five potion slots must show locks.");
+if(slots.Children.Take(5).Cast<SlotButton>().Any(x=>!x.CanDrag))throw new Exception("Unpinned potions must be draggable.");
+if(window.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text=="LOCK"))throw new Exception("Potions must not show forced locks.");
+void ToggleFirstPin(string label)
+{
+    var first=window.GetVisualDescendants().OfType<SlotButton>().Single(x=>x.Tag is int i&&i==1);
+    first.ContextMenu!.Items.OfType<MenuItem>().Single(x=>x.Header as string==label).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+    Dispatcher.UIThread.RunJobs();
+}
+ToggleFirstPin("Pin slot");
+if(window.GetVisualDescendants().OfType<SlotButton>().Single(x=>x.Tag is int i&&i==1).CanDrag)throw new Exception("Pinned potion must respect the user's pin.");
+ToggleFirstPin("Unpin slot");
+if(!window.GetVisualDescendants().OfType<SlotButton>().Single(x=>x.Tag is int i&&i==1).CanDrag)throw new Exception("Unpin must restore potion dragging.");
+slots=window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.UniformGrid>().Single();
 var source=slots.Children[7];var target=slots.Children[10];
 var from=source.TranslatePoint(new Point(source.Bounds.Width/2,source.Bounds.Height/2),window)!.Value;
 var to=target.TranslatePoint(new Point(target.Bounds.Width/2,target.Bounds.Height/2),window)!.Value;

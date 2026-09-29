@@ -156,6 +156,50 @@ public class MaintenanceSessionTests
         Assert.Equal(12,Assert.Single(game.Session.BankItems()).Quantity);Assert.NotNull(game.Session.LastBankScan);
     }
     [Fact]
+    public async Task AccountBankRefreshAtInnNeedsNoWorldLogsOrWalking()
+    {
+        using var game=new Replay();game.Npc("Innkeeper");game.Set("_ready",true);
+        using var app=new DAOrganizer.App.Organizer(Path.Combine(Path.GetTempPath(),"DAOrganizer-tests",Guid.NewGuid().ToString("N")));
+        game.OnSent=packet=>
+        {
+            Assert.Equal(ClientCommand.Merchant,packet.Command);
+            Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},packet.Data);
+            game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+        };
+        await app.RefreshBank(game.Session,true,default);
+        Assert.Single(game.Sent);Assert.Equal(12,Assert.Single(game.Session.BankItems()).Quantity);
+        Assert.Null(game.Store.Get<string>("banker/"+game.Session.MapId));
+    }
+
+    [Fact]
+    public async Task AutoDepositCannotTransferAtInnWhenBankRouteIsMissing()
+    {
+        using var game=new Replay();game.Npc("Innkeeper");game.Add(5,2);game.Set("_ready",true);
+        using var app=new DAOrganizer.App.Organizer(Path.Combine(Path.GetTempPath(),"DAOrganizer-tests",Guid.NewGuid().ToString("N")));
+        app.Rules.Set(Assert.Single(game.Session.Inventory()),ItemAction.AutoDeposit);
+        game.OnSent=packet=>game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[]});
+        var error=await Assert.ThrowsAsync<InvalidOperationException>(()=>app.RefreshBank(game.Session,true,default));
+        Assert.Contains("WorldLogs",error.Message);Assert.Single(game.Sent);
+        Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},game.Sent[0].Data);
+    }
+
+    [Fact]
+    public async Task ManualPotionMoveIsAllowedAndConfirmed()
+    {
+        using var game=new Replay();game.Set("_ready",true);
+        game.Receive(ServerCommand.AddInventory,new ServerAddInventoryMessage{Slot=1,Name="Komadium",Quantity=3,Sprite=47});
+        var potion=Assert.Single(game.Session.Inventory());
+        game.OnSent=packet=>
+        {
+            Assert.Equal(ClientCommand.ChangeSlot,packet.Command);
+            game.Receive(ServerCommand.RemoveInventory,new ServerRemoveInventoryMessage{Slot=1});
+            game.Receive(ServerCommand.AddInventory,new ServerAddInventoryMessage{Slot=9,Name="Komadium",Quantity=3,Sprite=47});
+        };
+        await game.Session.ApplyLayout(new(){{9,potion}},default);
+        Assert.Equal(9,Assert.Single(game.Session.Inventory()).Slot);Assert.Single(game.Sent);
+    }
+
+    [Fact]
     public async Task HaxCleanupWithdrawsAndDropsOnlyApprovedQuantity()
     {
         using var game=new Replay();game.Npc();game.Set("_ready",true);var item=new Item(1,"Emerald",12,15);
@@ -283,7 +327,7 @@ public class MaintenanceSessionTests
             Receive(ServerCommand.UserAppearance,new ServerUserAppearanceMessage{UserId=10});
             Receive(ServerCommand.UserPosition,new ServerUserPositionMessage{X=10,Y=12});
         }
-        public void Npc()=>Receive(ServerCommand.DrawObjects,new ServerDrawObjectsMessage{Entities=[new ServerCreatureEntity{Id=42,X=10,Y=12,CreatureType=CreatureType.Mundane,Name="Banker"}]});
+        public void Npc(string name="Banker")=>Receive(ServerCommand.DrawObjects,new ServerDrawObjectsMessage{Entities=[new ServerCreatureEntity{Id=42,X=10,Y=12,CreatureType=CreatureType.Mundane,Name=name}]});
         public void StartBank()
         {
             Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{MenuType=DialogMenuType.Menu,EntityId=42,MenuChoices=[new(){Text="Withdraw Items",PursuitId=69}]});

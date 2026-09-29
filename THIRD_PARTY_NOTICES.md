@@ -59,4 +59,6 @@ The organizer bundles its own classification rules. It does not include Vorlof p
 
 ## Original visual assets
 
-The Celtic seal, interlaced rules and fallback item illustrations in `src/DAOrganizer.App/Ornaments.cs` are original vector drawings, covered by the repository MIT license. No generated images, external fonts or game sprite files are bundled. Georgia, Segoe UI and Consolas are requested from the user's operating system. Public screenshots show the app's fictional in-memory demo collection and these original drawings.
+The Celtic seal and interlaced rules in `src/DAOrganizer.App/Ornaments.cs` are original vector drawings, covered by the repository MIT license. Item images are original Dark Ages sprites read from the user's installed game. Raw game assets are not bundled. Documentation screenshots show those sprites inside the app with fictional accounts; the depicted game artwork retains its original ownership and is not relicensed under MIT. No generated item illustrations or external fonts are included. Georgia, Segoe UI and Consolas are requested from the operating system.
+
+Trinket names/classifications were checked against [Vorlof's trinket list](https://vorlof.com/trinkets.html). The app includes factual names and local rules, not the site's descriptions or image files.

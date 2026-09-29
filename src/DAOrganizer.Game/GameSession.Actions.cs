@@ -14,7 +14,6 @@ public sealed partial class GameSession
         try
         {
             var before=Inventory();var expected=before.ToDictionary(x=>x.Slot);
-            PotionSlots.ValidateLocks(before,desired);
             foreach(var (from,to) in SlotPlanner.Swaps(before,desired))
             {
                 token.ThrowIfCancellationRequested();
@@ -35,7 +34,7 @@ public sealed partial class GameSession
         if(!Online)throw new InvalidOperationException("Log in before scanning bank.");
         var candidates=Mundanes().Where(x=>string.IsNullOrWhiteSpace(npcName)||string.Equals(x.Name,npcName,StringComparison.OrdinalIgnoreCase))
             .OrderBy(x=>Math.Abs(x.X-Position.X)+Math.Abs(x.Y-Position.Y)).ToArray();
-        if(candidates.Length==0)throw new InvalidOperationException("Banker is not visible. Set the banker name and approach the bank.");
+        if(candidates.Length==0)throw new InvalidOperationException("No NPC is visible. Approach an NPC and scan again; saved bank contents were retained.");
         var npc=candidates[0];var previous=LastBankScan;DateTimeOffset requested;
         lock(_gate)
         {
@@ -50,7 +49,6 @@ public sealed partial class GameSession
         try
         {
             await WaitUntil(()=>LastBankScan!=previous,TimeSpan.FromSeconds(12),token);
-            _store.Put("banker/"+MapId,npc.Name);
         }
         catch(TimeoutException ex){throw new TimeoutException("Hax bank list did not complete. Saved contents retained.",ex);}
         finally

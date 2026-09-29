@@ -7,16 +7,19 @@ public static class SlotPlanner
     {
         var source = items.ToDictionary(x=>x.Slot);
         if(source.Keys.Any(x=>x is <1 or >59)) throw new ArgumentException("Only item slots 1–59 can move.");
-        var result=PotionSlots.Select(source.Values);
-        var supplies=result.Values.Select(x=>x.Slot).ToHashSet();
-        var protectedSlots=pinned.Except(supplies).Except(result.Keys).ToHashSet();
-        foreach(var entry in source.Where(x=>protectedSlots.Contains(x.Key)))result[entry.Key]=entry.Value;
-        var ordered = source.Values.Where(x=>!supplies.Contains(x.Slot)&&!protectedSlots.Contains(x.Slot))
+        var result=source.Where(x=>pinned.Contains(x.Key)).ToDictionary();
+        foreach(var entry in PotionSlots.Select(source.Values,pinned))result.Add(entry.Key,entry.Value);
+        var assigned=result.Values.Select(x=>x.Slot).ToHashSet();
+        var trinkets=source.Values.Where(x=>!assigned.Contains(x.Slot)&&ItemCategories.IsTrinket(x))
+            .OrderBy(x=>x.Name,StringComparer.OrdinalIgnoreCase).ThenBy(x=>x.Slot).ToArray();
+        var right=Enumerable.Range(1,12).Reverse().Where(x=>!pinned.Contains(x)&&!result.ContainsKey(x)).ToArray();
+        foreach(var (item,target) in trinkets.Zip(right)){result[target]=item;assigned.Add(item.Slot);}
+        var ordered = source.Values.Where(x=>!assigned.Contains(x.Slot))
             .OrderBy(x=>byCategory?ItemCategories.Order(x.Category):0)
             .ThenBy(x=>byCategory?x.Category:"",StringComparer.OrdinalIgnoreCase)
             .ThenBy(x=>byCategory?ItemCategories.Family(x):"",StringComparer.OrdinalIgnoreCase)
             .ThenBy(x=>x.Name,StringComparer.OrdinalIgnoreCase).ThenBy(x=>x.Slot).ToArray();
-        var slots = BottomFirstSlots().Where(x=>!protectedSlots.Contains(x)&&!result.ContainsKey(x)).ToArray();
+        var slots = BottomFirstSlots().Where(x=>!pinned.Contains(x)&&!result.ContainsKey(x)).ToArray();
         for(var i=0;i<ordered.Length;i++) result[slots[i]]=ordered[i];
         return result;
     }

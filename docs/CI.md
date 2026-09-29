@@ -1,6 +1,6 @@
 # Verification and CI
 
-The 0.14.0 release passed a local Release build with zero warnings/errors, all 153 unit/protocol tests, the Avalonia interaction checks and the demo-isolation screenshot gallery.
+The 0.15.0 release passed a local Release build with zero warnings/errors, all 161 unit/protocol tests, the Avalonia interaction checks and the demo-isolation screenshot gallery.
 
 The [Windows workflow](../.github/workflows/build.yml) runs on pushes to `main`, pull requests and manual dispatch. Current results are available in [GitHub Actions](https://github.com/buildwithraymond/DAOrganizer/actions/workflows/build.yml).
 
