@@ -7,7 +7,7 @@
 A Windows inventory companion with a black-and-gold Celtic interface.
 Find items across characters, arrange your inventory, and review what stays, banks, or goes.
 
-[![Checks: 153 passing](https://img.shields.io/badge/checks-153_passing-66856a.svg)](docs/CI.md)
+[![Build](https://github.com/buildwithraymond/DAOrganizer/actions/workflows/build.yml/badge.svg)](https://github.com/buildwithraymond/DAOrganizer/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d6b46a.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/platform-Windows_x64-191a1e.svg)](docs/GETTING_STARTED.md)
 [![.NET](https://img.shields.io/badge/.NET-10-191a1e.svg)](global.json)
@@ -76,7 +76,7 @@ dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll a
 .\tools\Package.ps1 -Output artifacts/DAOrganizer
 ```
 
-The [Windows CI definition](tools/ci/build.yml) builds the solution, runs protocol/unit checks, exercises the UI with synthetic data, verifies demo isolation, renders screenshots and packages the app. Activation is pending GitHub workflow authorization; see [CI setup and local results](docs/CI.md).
+CI builds the solution, runs protocol/unit checks, exercises the UI with synthetic data, verifies demo isolation, renders screenshots and packages the app. See [Actions](https://github.com/buildwithraymond/DAOrganizer/actions) and [verification details](docs/CI.md).
 
 ## Project map
 
