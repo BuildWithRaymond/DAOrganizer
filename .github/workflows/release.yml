@@ -1,0 +1,100 @@
+name: Build release candidate
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable or beta tag to validate
+        required: true
+        default: v0.15.0
+      publish:
+        description: Explicitly publish matching existing tag after candidate validation
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      AVALONIA_TELEMETRY_OPTOUT: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore DAOrganizer.slnx -m:1
+      - name: Build
+        run: dotnet build DAOrganizer.slnx -c Release --no-restore -m:1 -p:UsedAvaloniaProducts=
+      - name: Unit and protocol tests
+        run: dotnet test tests/DAOrganizer.Tests -c Release --no-build -m:1 --logger trx --results-directory artifacts/test-results
+      - name: UI regression checks
+        run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/ui-checks
+      - name: Demo isolation and screenshots
+        run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/gallery --gallery
+      - name: Test release helper
+        run: dotnet run --project tools/DAOrganizer.Release -c Release -- self-test
+      - name: Package portable Windows app
+        run: ./tools/Package.ps1 -Output artifacts/package
+      - name: Create and validate release files
+        shell: pwsh
+        run: |
+          $notes="https://github.com/${{ github.repository }}/blob/$env:RELEASE_TAG/CHANGELOG.md"
+          dotnet run --project tools/DAOrganizer.Release -c Release -- create --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --package artifacts/package --output artifacts/release --repository ${{ github.repository }} --notes-url $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Release generation failed.' }
+          dotnet run --project tools/DAOrganizer.Release -c Release -- verify --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --output artifacts/release --repository ${{ github.repository }}
+          if ($LASTEXITCODE -ne 0) { throw 'Release candidate verification failed.' }
+      - name: Upload reviewable candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-candidate-${{ env.RELEASE_TAG }}
+          path: artifacts/release/
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == true
+    needs: candidate
+    runs-on: windows-latest
+    environment: release-production
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-candidate-${{ inputs.tag }}
+          path: artifacts/release
+      - name: Reverify candidate at publication boundary
+        shell: pwsh
+        run: |
+          dotnet run --project tools/DAOrganizer.Release -c Release -- verify --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --output artifacts/release --repository ${{ github.repository }}
+          if ($LASTEXITCODE -ne 0) { throw 'Publication candidate verification failed.' }
+      - name: Publish approved GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $assetPaths = @(Get-ChildItem artifacts/release -File | ForEach-Object FullName)
+          $channelArg = if ($env:RELEASE_TAG.Contains('-beta.')) { @('--prerelease') } else { @() }
+          gh release create $env:RELEASE_TAG @assetPaths --verify-tag --title "DA Organizer $env:RELEASE_TAG" --generate-notes @channelArg
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed.' }
