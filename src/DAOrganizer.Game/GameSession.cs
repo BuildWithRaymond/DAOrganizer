@@ -146,6 +146,8 @@ public sealed partial class GameSession:IDisposable
                 if(server.Data.Length==0)throw new InvalidDataException("Incomplete logout approval.");
                 _quitApproval=server.Data[0];Interlocked.Increment(ref _quitRevision);return;
             }
+            if(server.Command==ServerCommand.DrawObjects)_entityDrawPackets++;
+            if(server.Command==ServerCommand.DrawHumanObjects)_humanDrawPackets++;
             if(server.Command==ServerCommand.ScreenMenu)
             {
                 DialogRevision++;
@@ -227,7 +229,7 @@ public sealed partial class GameSession:IDisposable
                     _baseline.MapSeen=true;
                     _baseline.Changed(DateTimeOffset.UtcNow);_pendingWalk=null;
                     if(_homeInnPending)_homeInnMapSeen=true;
-                    MapId=map.MapId;Width=map.Width;Height=map.Height;MapName=map.Name;_creatures.Clear();_visibleTradeTargets.Clear();Dialog=null;FieldMap=null;_pendingBank=null;BankNpcId=null;LastBankMenu=null;break;
+                    MapId=map.MapId;Width=map.Width;Height=map.Height;MapName=map.Name;_creatures.Clear();_visibleTradeTargets.Clear();_entityDrawPackets=0;_humanDrawPackets=0;Dialog=null;FieldMap=null;_pendingBank=null;BankNpcId=null;LastBankMenu=null;break;
                 case ServerUserPositionMessage position:
                     Position=new(position.X,position.Y);PositionRevision++;_pendingWalk=null;ObserveHomeInnArrival();break;
                 case ServerMoveMessage movement:
@@ -300,7 +302,7 @@ public sealed partial class GameSession:IDisposable
     public void SetStatus(string status){Status=status;Changed?.Invoke();}
     private void ResetBaseline()
     {
-        _inventory.Clear();_equipment.Clear();_visibleTradeTargets.Clear();_ready=false;_dirty=false;_baseline=new();
+        _inventory.Clear();_equipment.Clear();_visibleTradeTargets.Clear();_entityDrawPackets=0;_humanDrawPackets=0;_ready=false;_dirty=false;_baseline=new();
         Gold=0;Health=0;Online=false;Dialog=null;FieldMap=null;_pendingBank=null;LastBankScan=null;LastBankMenu=null;BankNpcId=null;
         _safeQuitApproved=false;_safeQuitRequested=false;
         _walkCounter=0;_playerId=0;_pendingWalk=null;PositionRevision=0;ManualMovementRevision=0;

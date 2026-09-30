@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Layout;
 using DAOrganizer.Core;
+using DAOrganizer.Game;
 
 namespace DAOrganizer.App;
 
@@ -94,6 +95,27 @@ public sealed partial class MainWindow
                         var labels=direct.Select(x=>$"{x.SourceCharacter} {x.SourceLocation} slot {x.SourceSlot}: {x.SourceItem.Name} → {x.DestinationCharacter} Bank").ToArray();
                         var choice=new ComboBox{ItemsSource=labels,SelectedIndex=-1,Width=680,PlaceholderText="Choose one Direct route"};
                         body.Children.Add(choice);
+                        body.Children.Add(Button("Check live visibility",() =>
+                        {
+                            try
+                            {
+                                if(choice.SelectedIndex<0||choice.SelectedIndex>=direct.Length)
+                                    throw new InvalidOperationException("Choose one Direct route from the list above.");
+                                var step=direct[choice.SelectedIndex];
+                                var sender=_app.Session(step.SourceCharacter)??throw new InvalidOperationException("Source is offline.");
+                                var recipient=_app.Session(step.DestinationCharacter)??throw new InvalidOperationException("Recipient is offline.");
+                                var now=DateTimeOffset.UtcNow;
+                                string Line(TradeTargetInspection view)
+                                {
+                                    var age=view.LatestMatchAt is { } seen?$"{Math.Max(0,(int)(now-seen).TotalSeconds)}s ago":"never";
+                                    return $"{view.Name}: {(view.Connected?"connected":"disconnected")}, map {view.MapId} ({view.Position.X},{view.Position.Y}), own ID {(view.PlayerIdKnown?"yes":"no")}, partner {view.NamedMatches} named/{view.RecentMatches} recent (last {age}), other visible {view.VisibleTargets}; draw packets 0x07={view.EntityDrawPackets}, 0x33={view.HumanDrawPackets}.";
+                                }
+                                status.Text=Line(sender.InspectTradeTarget(recipient.Name,now))+"\n"+
+                                    Line(recipient.InspectTradeTarget(sender.Name,now));
+                            }
+                            catch(Exception ex){status.Text=ex.Message;}
+                            return Task.CompletedTask;
+                        }));
                     Task Prepare(bool trial)
                     {
                         try

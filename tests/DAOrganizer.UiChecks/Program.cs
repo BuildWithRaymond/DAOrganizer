@@ -162,6 +162,8 @@ Click("Organization plan");
 var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);
 var trialButton=organization.GetVisualDescendants().OfType<Button>()
     .Single(x=>x.Content as string=="Prepare one-unit controlled trial");
+if(!organization.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Check live visibility"))
+    throw new Exception("Missing read-only direct trade visibility check.");
 var firstCandidate=organization.GetVisualDescendants().OfType<CheckBox>()
     .First(x=>(x.Content as string)?.Contains("slot",StringComparison.Ordinal)==true);
 if(trialButton.TranslatePoint(default,organization)?.Y is not double actionY||

@@ -3,10 +3,27 @@ using DAOrganizer.Core;
 namespace DAOrganizer.Game;
 
 public sealed record VisibleTradeTarget(uint Id,string Name,Tile Position,int MapId,DateTimeOffset ObservedAt);
+public sealed record TradeTargetInspection(string Name,bool Connected,bool Ready,int MapId,string MapName,Tile Position,
+    bool PlayerIdKnown,int EntityDrawPackets,int HumanDrawPackets,int VisibleTargets,int NamedMatches,
+    int RecentMatches,DateTimeOffset? LatestMatchAt);
 
 public sealed partial class GameSession
 {
     private readonly Dictionary<uint,VisibleTradeTarget> _visibleTradeTargets=[];
+    private int _entityDrawPackets,_humanDrawPackets;
+
+    public TradeTargetInspection InspectTradeTarget(string expectedPartner,DateTimeOffset now)
+    {
+        if(string.IsNullOrWhiteSpace(expectedPartner))throw new ArgumentException("Expected partner name is required.",nameof(expectedPartner));
+        lock(_gate)
+        {
+            var named=_visibleTradeTargets.Values.Where(x=>x.Name.Equals(expectedPartner,StringComparison.OrdinalIgnoreCase)).ToArray();
+            return new(Name,_connection is {IsConnected:true},Ready,MapId,MapName,Position,_playerId!=0,
+                _entityDrawPackets,_humanDrawPackets,_visibleTradeTargets.Count,named.Length,
+                named.Count(x=>x.MapId==MapId&&x.Id!=0&&x.ObservedAt<=now&&now-x.ObservedAt<=TimeSpan.FromMinutes(2)),
+                named.Length==0?null:named.Max(x=>x.ObservedAt));
+        }
+    }
 
     public VisibleTradeTarget ResolveTradeTarget(string name,DateTimeOffset now)
     {

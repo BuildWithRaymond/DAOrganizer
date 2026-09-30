@@ -14,6 +14,20 @@ namespace DAOrganizer.Tests;
 public class GameSessionTradeTargetTests
 {
     [Fact]
+    public void VisibilityInspectionCountsDrawsAndExpectedPartner()
+    {
+        using var replay=new Replay();
+        replay.Receive(ServerCommand.MapSize,new ServerMapSizeMessage{MapId=7,Width=40,Height=40,Name="Test"});
+        replay.Receive(ServerCommand.DrawHumanObjects,Human(11,"Beta",11,12));
+        var inspection=replay.Session.InspectTradeTarget("Beta",DateTimeOffset.UtcNow);
+        Assert.Equal(7,inspection.MapId);
+        Assert.Equal(1,inspection.HumanDrawPackets);
+        Assert.Equal(1,inspection.VisibleTargets);
+        Assert.Equal(1,inspection.NamedMatches);
+        Assert.Equal(1,inspection.RecentMatches);
+    }
+
+    [Fact]
     public void CaptureRejectsDisconnectedSessionBeforeCheckingPartnerVisibility()
     {
         using var replay=new Replay();
