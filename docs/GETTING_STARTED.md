@@ -49,6 +49,8 @@ Item rules apply to matching variants across characters:
 
 Ground drops can be lost. Equipment and explicitly pinned inventory slots are excluded. Bank junk is withdrawn one unit at a time and then dropped. A failed or unconfirmed drop stops further attempts for that item on that character. There is no automatic transfer/drop retry.
 
+Deposits also require a confirmed inventory decrease. If the banker refuses because storage is full, the item stays carried; the organizer reports the deposit as unconfirmed and does not retry it automatically. The app does not yet show a dedicated “bank full” reason.
+
 **Update selected accounts** logs into selected offline accounts one at a time, reads the bank through a nearby NPC, travels to a bank only if marked deposits are needed, requests safe logout and closes only its newly created client after success. Existing connected clients are skipped. A failed operation leaves its client open. **Stop**, manual game actions, movement, damage and connection errors interrupt operations. Travel continues when the game loses focus.
 
 ## Data and backups
