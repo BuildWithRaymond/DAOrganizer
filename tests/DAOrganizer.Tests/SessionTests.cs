@@ -30,6 +30,23 @@ public class SessionTests
         Observe(session,connection,new ServerPacket((byte)ServerCommand.Quit,new byte[]{1}));
         Assert.True(session.Online);
     }
+    [Fact]
+    public void OwnDrawUpdatesSavedAppearanceButAnotherCharacterDoesNot()
+    {
+        using var store=new InventoryStore(":memory:");using var session=new GameSession(store);using var connection=Connection();
+        Observe(session,connection,Packet(ServerCommand.UserAppearance,new ServerUserAppearanceMessage{UserId=10}));
+        void Draw(uint entity,ushort head)=>Observe(session,connection,Packet(ServerCommand.DrawHumanObjects,new ServerDrawHumanObjectsMessage
+        {
+            EntityId=entity,Name="Example",HeadSprite=head,BodySprite=BodySprite.Male,FaceShape=2,HairColor=DyeColor.Default,
+            SkinColor=SkinColor.Default
+        }));
+        Draw(11,7);
+        Assert.Null(store.Get<System.Text.Json.JsonElement?>("appearance/example"));
+        Draw(10,8);
+        Assert.Equal(8,store.Get<System.Text.Json.JsonElement>("appearance/example").GetProperty("HeadSprite").GetInt32());
+        Draw(10,9);
+        Assert.Equal(9,store.Get<System.Text.Json.JsonElement>("appearance/example").GetProperty("HeadSprite").GetInt32());
+    }
     [Theory]
     [InlineData((byte)0)]
     [InlineData((byte)1)]

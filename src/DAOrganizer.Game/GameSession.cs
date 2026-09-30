@@ -192,6 +192,15 @@ public sealed partial class GameSession:IDisposable
                     if(!Online){Online=true;Status="Reading inventory";}
                     _baseline.AppearanceSeen=true;
                     break;
+                case ServerDrawHumanObjectsMessage human when human.EntityId==_playerId&&_playerId!=0&&Name.Length>0&&human.MonsterSprite==null:
+                    var look=new CharacterAppearance(human.HeadSprite,human.FaceShape,(byte)(human.BodySprite??BodySprite.None),
+                        (byte)(human.HairColor??DyeColor.Default),(byte)(human.SkinColor??SkinColor.Default),
+                        human.ArmsSprite??0,human.ArmorSprite??0,human.OvercoatSprite??0,
+                        human.Accessory1Sprite??0,(byte)(human.Accessory1Color??DyeColor.Default),
+                        human.Accessory2Sprite??0,(byte)(human.Accessory2Color??DyeColor.Default),
+                        human.Accessory3Sprite??0,(byte)(human.Accessory3Color??DyeColor.Default));
+                    _store.Put("appearance/"+Name.ToLowerInvariant(),look);
+                    break;
                 case ServerUserReadyMessage:
                     _baseline.ControlSeen=true;_baseline.Changed(DateTimeOffset.UtcNow);_dirty=true;
                     break;
