@@ -14,6 +14,15 @@ namespace DAOrganizer.Tests;
 public class GameSessionTradeTargetTests
 {
     [Fact]
+    public void CaptureRejectsDisconnectedSessionBeforeCheckingPartnerVisibility()
+    {
+        using var replay=new Replay();
+        var error=Assert.Throws<InvalidOperationException>(()=>
+            replay.Session.CaptureTradeEndpoint("Beta",DateTimeOffset.UtcNow));
+        Assert.Contains("not connected",error.Message,StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void TargetMustBeNamedVisibleUniqueAndRecentlyObserved()
     {
         using var replay=new Replay();
