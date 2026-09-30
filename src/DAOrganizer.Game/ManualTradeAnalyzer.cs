@@ -217,7 +217,7 @@ public static class ManualTradeAnalyzer
 
     private static bool UnknownCloseCandidate(Side side)=>(side.Capture.FilteredTimeline??[])
         .Any(x=>x.ObservedAt>=side.Client.LastOrDefault(y=>y.Message.Action==ExchangeClientActionType.Accept)?.ObservedAt&&
-            x.Direction=="Server"&&x.Opcode!=0x08);
+            x.Direction=="Server"&&x.Opcode is not (0x08 or 0x1A));
 
     private static bool ExplicitDenial(Side side,out string reason)
     {

@@ -7,6 +7,40 @@ namespace DAOrganizer.App;
 
 public sealed partial class Organizer
 {
+    private void ReconcileRecordedTransferDeliveries()
+    {
+        foreach(var run in Store.ListTransferRuns(200).Where(x=>x.State==TransferRunState.NeedsReconciliation&&
+            x.Reason?.StartsWith("Recipient delivery was not proven:",StringComparison.Ordinal)==true))
+        {
+            var directory=Path.Combine(DataDirectory,"diagnostics","transfer-runs",run.Id.ToString("N"));
+            ManualTradeResult? first,second;
+            try
+            {
+                first=JsonSerializer.Deserialize<ManualTradeResult>(File.ReadAllText(Path.Combine(directory,"first.json")));
+                second=JsonSerializer.Deserialize<ManualTradeResult>(File.ReadAllText(Path.Combine(directory,"second.json")));
+            }
+            catch(IOException){continue;}
+            catch(UnauthorizedAccessException){continue;}
+            catch(JsonException){continue;}
+            if(first is null||second is null||first.OperationId!=run.Id.ToString("N")||
+               second.OperationId!=run.Id.ToString("N"))continue;
+            var plan=Store.LoadOrganizationPlan(run.PlanId)?.Plan;
+            var step=plan?.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+            if(step is null||step.RouteKind!=TransferRouteKind.Direct||step.Quantity!=run.Quantity||
+               !step.SourceCharacter.Equals(run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+               !step.DestinationCharacter.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))continue;
+            ManualTradeAnalysis analysis;
+            // Saved diagnostics are optional local files. A malformed capture must not block app startup.
+            try{analysis=ManualTradeAnalyzer.Analyze(first,second);}
+            catch(Exception){continue;}
+            if(!analysis.Verified||analysis.Item is null||analysis.Quantity!=run.Quantity||
+               !string.Equals(analysis.Sender,run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+               !string.Equals(analysis.Recipient,run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)||
+               !OrganizationPlanContract.MatchesObservedItem(analysis.Item,step.SourceItem))continue;
+            Store.RecordVerifiedRecipientDelivery(run.Id,DateTimeOffset.UtcNow);
+        }
+    }
+
     public async Task ExecuteOneUnitDirectTrial(PlannedOrganizationStep selected,CancellationToken token)
     {
         RequireLiveProfile();

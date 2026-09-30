@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using DAOrganizer.Core;
 using Microsoft.Data.Sqlite;
 using Xunit;
@@ -146,5 +147,85 @@ public class TransferJournalTests
         Assert.Equal(TransferRunState.NeedsReconciliation,run.State);
         Assert.Throws<InvalidOperationException>(()=>store.AdvanceTransferRun(run.Id,TransferRunState.NeedsReconciliation,
             TransferRunState.Banking,"Unsafe replay",DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public void SavedDeliveryEvidenceCorrectsHolderWithoutReplayingOrCompletingBanking()
+    {
+        using var store=new InventoryStore(":memory:");
+        store.SaveSnapshot("Alpha","Bank",[Chest],true);
+        store.SaveSnapshot("Bravo","Bank",[],true);
+        var plan=ReadyPlan(store);store.SaveOrganizationPlan(plan);
+        store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+        var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
+        foreach(var (from,to) in new[]{
+            (TransferRunState.Preparing,TransferRunState.InSourceInventory),
+            (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen),
+            (TransferRunState.ExchangeOpen,TransferRunState.Offered),
+            (TransferRunState.Offered,TransferRunState.Accepting)})
+            store.AdvanceTransferRun(run.Id,from,to,"Synthetic stage",DateTimeOffset.UtcNow);
+        store.MarkTransferNeedsReconciliation(run.Id,
+            "Recipient delivery was not proven: Complete two-sided acceptance and final delivery are not proven.",
+            DateTimeOffset.UtcNow);
+
+        var corrected=store.RecordVerifiedRecipientDelivery(run.Id,DateTimeOffset.UtcNow);
+        Assert.Equal(TransferRunState.NeedsReconciliation,corrected.State);
+        Assert.Equal("Bravo",corrected.LastVerifiedHolder);
+        Assert.Contains("bank deposit not confirmed",corrected.Reason);
+        Assert.Throws<InvalidOperationException>(()=>store.RecordVerifiedRecipientDelivery(run.Id,DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(()=>store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReopeningProfileUsesOnlyValidTwoSessionCaptureToCorrectLastHolder(bool malformed)
+    {
+        var directory=Path.Combine(Path.GetTempPath(),"da-transfer-recovery-"+Guid.NewGuid().ToString("N"));
+        try
+        {
+            Guid runId;
+            using(var app=new DAOrganizer.App.Organizer(directory))
+            {
+                var (sender,recipient)=ManualTradeAnalyzerTests.PartialStack();
+                var item=Assert.Single(sender.BeforeInventory);
+                app.Store.SaveSnapshot("Alpha","Bank",[item],true);
+                app.Store.SaveSnapshot("Beta","Bank",[],true);
+                var key=ItemGroups.Key(item);var shape=OrganizationPlanContract.ItemFingerprint(item);
+                var step=new PlannedOrganizationStep(Guid.NewGuid(),0,"Alpha","Beta",key,item,"Bank",item.Slot,2,
+                    TransferRouteKind.Direct,
+                    [new(OrganizationLegKind.Withdraw,"Alpha","Alpha","Bank","Inventory"),
+                     new(OrganizationLegKind.Exchange,"Alpha","Beta","Inventory","Inventory"),
+                     new(OrganizationLegKind.Deposit,"Beta","Beta","Inventory","Bank")],
+                    ImmutableArray<Guid>.Empty,OrganizationReadiness.Ready,
+                    [new("Alpha","Bank",key,item.Slot,5,shape),new("Beta","Bank",key,null,0,shape)],
+                    [new("Alpha","Bank",key,item.Slot,3,shape),new("Beta","Bank",key,null,2,shape)]);
+                var plan=new ExactOrganizationPlan(Guid.NewGuid(),DateTimeOffset.UtcNow,DateTimeOffset.UtcNow.AddHours(1),
+                    app.Store.ReadOrganizationState().Fingerprint,[step]);
+                app.Store.SaveOrganizationPlan(plan);app.Store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+                var run=app.Store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);runId=run.Id;
+                foreach(var (from,to) in new[]{
+                    (TransferRunState.Preparing,TransferRunState.InSourceInventory),
+                    (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen),
+                    (TransferRunState.ExchangeOpen,TransferRunState.Offered),
+                    (TransferRunState.Offered,TransferRunState.Accepting)})
+                    app.Store.AdvanceTransferRun(run.Id,from,to,"Synthetic stage",DateTimeOffset.UtcNow);
+                app.Store.MarkTransferNeedsReconciliation(run.Id,
+                    "Recipient delivery was not proven: Complete two-sided acceptance and final delivery are not proven.",
+                    DateTimeOffset.UtcNow);
+                var trace=Path.Combine(directory,"diagnostics","transfer-runs",run.Id.ToString("N"));
+                Directory.CreateDirectory(trace);
+                File.WriteAllText(Path.Combine(trace,"first.json"),JsonSerializer.Serialize(sender with
+                {OperationId=run.Id.ToString("N"),Character=malformed?null!:sender.Character}));
+                File.WriteAllText(Path.Combine(trace,"second.json"),JsonSerializer.Serialize(recipient with{OperationId=run.Id.ToString("N")}));
+            }
+            using(var reopened=new DAOrganizer.App.Organizer(directory))
+            {
+                var run=reopened.Store.LoadTransferRun(runId)!;
+                Assert.Equal(malformed?"Alpha":"Beta",run.LastVerifiedHolder);
+                Assert.Equal(TransferRunState.NeedsReconciliation,run.State);
+            }
+        }
+        finally{SqliteConnection.ClearAllPools();if(Directory.Exists(directory))Directory.Delete(directory,true);}
     }
 }

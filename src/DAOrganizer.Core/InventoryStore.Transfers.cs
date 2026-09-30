@@ -168,6 +168,45 @@ public sealed partial class InventoryStore
         }
     }
 
+    // Call only after the saved two-session trace is independently reanalyzed and matches the run's step.
+    // This corrects custody evidence; it neither approves banking nor releases the source reservation.
+    public TransferRun RecordVerifiedRecipientDelivery(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                using var events=_db.CreateCommand();
+                events.CommandText="SELECT state FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 2";
+                events.Parameters.AddWithValue("$id",id.ToString("D"));
+                using var reader=events.ExecuteReader();var latest=new List<string>();
+                while(reader.Read())latest.Add(reader.GetString(0));
+                reader.Close();
+                if(run.State!=TransferRunState.NeedsReconciliation||
+                   !string.Equals(run.LastVerifiedHolder,run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+                   run.Reason?.StartsWith("Recipient delivery was not proven:",StringComparison.Ordinal)!=true||
+                   latest.Count!=2||latest[0]!="NeedsReconciliation"||latest[1]!="Accepting"||now<run.UpdatedAt)
+                    throw new InvalidOperationException("Only an unverified post-acceptance delivery can be corrected.");
+                const string reason="Saved exchange capture proves recipient delivery; bank deposit not confirmed.";
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("UPDATE transfer_runs SET last_verified_holder=$holder,reason=$reason,updated_at=$at WHERE id=$id",
+                    ("$holder",run.DestinationCharacter),("$reason",reason),("$at",now.ToString("O")),
+                    ("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'NeedsReconciliation',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),
+                    ("$detail",reason));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
     public TransferRun AdvanceTransferRun(Guid id,TransferRunState expected,TransferRunState next,
         string detail,DateTimeOffset now)
     {

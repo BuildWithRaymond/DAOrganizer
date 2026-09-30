@@ -121,6 +121,17 @@ public class ManualTradeAnalyzerTests
     }
 
     [Fact]
+    public void MotionPacketsAfterBothAcceptsDoNotInvalidateExactDelivery()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with {FilteredTimeline=[new(sender.FinishedAt.AddMilliseconds(-1),"Server",0x1A)]};
+        recipient=recipient with {FilteredTimeline=[new(recipient.FinishedAt.AddMilliseconds(-1),"Server",0x1A)]};
+        var result=ManualTradeAnalyzer.Analyze(sender,recipient);
+        Assert.True(result.Verified);
+        Assert.False(result.Evidence?.UnknownCloseSignalObserved);
+    }
+
+    [Fact]
     public void RuntimeIdReuseAndDuplicateEventsAreInconclusive()
     {
         var (sender,recipient)=PartialStack();
