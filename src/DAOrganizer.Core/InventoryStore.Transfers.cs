@@ -14,6 +14,42 @@ public sealed record TransferRun(Guid Id,Guid PlanId,Guid StepId,string SourceCh
 
 public sealed partial class InventoryStore
 {
+    // Earlier builds journaled this pre-send age check as uncertain custody. Its exception
+    // is thrown before the withdrawal packet, so this exact two-event case is safe to release.
+    public int ResolveKnownNoSendBankAgeFailures(DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                using var find=_db.CreateCommand();
+                find.CommandText="""
+                    SELECT r.id FROM transfer_runs r
+                    WHERE r.state='NeedsReconciliation'
+                      AND r.reason='Source bank scan is too old for an approved withdrawal.'
+                      AND r.last_verified_holder=r.source_character
+                      AND (SELECT count(*) FROM transfer_events e WHERE e.run_id=r.id)=2
+                      AND EXISTS(SELECT 1 FROM transfer_events e WHERE e.run_id=r.id AND e.ordinal=0 AND e.state='Preparing')
+                      AND EXISTS(SELECT 1 FROM transfer_events e WHERE e.run_id=r.id AND e.ordinal=1 AND e.state='NeedsReconciliation')
+                    """;
+                using var reader=find.ExecuteReader();var ids=new List<string>();
+                while(reader.Read())ids.Add(reader.GetString(0));
+                reader.Close();
+                foreach(var id in ids)
+                {
+                    Execute("UPDATE transfer_runs SET state='Failed',reason='Pre-send bank age gate; no withdrawal packet sent',updated_at=$at WHERE id=$id",
+                        ("$at",now.ToString("O")),("$id",id));
+                    Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,2,'Failed',$at,'Known pre-send bank age gate; source reservation released')",
+                        ("$id",id),("$at",now.ToString("O")));
+                }
+                Execute("COMMIT");
+                return ids.Count;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
     // This is a durable preflight checkpoint. It never sends a packet or changes custody.
     public TransferRun BeginTransferPreparation(Guid planId,DateTimeOffset now)
     {

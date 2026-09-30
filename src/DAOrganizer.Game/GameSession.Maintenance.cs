@@ -163,7 +163,7 @@ public sealed partial class GameSession:IItemMaintenanceClient
         }
         finally{_actionGate.Release();}
     }
-    public async Task<Item?> WithdrawApprovedTransferOne(Item bankItem,CancellationToken token)
+    public async Task<Item?> WithdrawApprovedTransferOne(Item bankItem,DateTimeOffset approvedBankScan,CancellationToken token)
     {
         await _actionGate.WaitAsync(token);
         try
@@ -172,8 +172,8 @@ public sealed partial class GameSession:IItemMaintenanceClient
             lock(_gate)
             {
                 token.ThrowIfCancellationRequested();guard();
-                if(LastBankScan is null||DateTimeOffset.UtcNow-LastBankScan>TimeSpan.FromMinutes(1))
-                    throw new InvalidOperationException("Source bank scan is too old for an approved withdrawal.");
+                if(LastBankScan!=approvedBankScan||_store.Freshness(Name,"Bank")!="Current")
+                    throw new InvalidOperationException("Source bank changed after the approved scan.");
                 var matches=BankItems().Where(x=>x.Name.Equals(bankItem.Name,StringComparison.OrdinalIgnoreCase)).ToArray();
                 if(matches.Length!=1||matches[0]!=bankItem||bankItem.Quantity<1||
                     Inventory().Length>=59||Inventory().Any(x=>ItemGroups.Key(x)==ItemGroups.Key(bankItem)))

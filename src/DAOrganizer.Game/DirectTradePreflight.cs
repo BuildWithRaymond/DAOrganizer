@@ -48,8 +48,6 @@ public static class DirectTradePreflight
             sender.Partner.MapId!=sender.MapId||recipient.Partner.MapId!=recipient.MapId||
             sender.Partner.Position!=recipient.Position||recipient.Partner.Position!=sender.Position||
             now<sender.Partner.ObservedAt||now<recipient.Partner.ObservedAt||
-            now-sender.Partner.ObservedAt>TimeSpan.FromMinutes(2)||
-            now-recipient.Partner.ObservedAt>TimeSpan.FromMinutes(2)||
             Math.Abs(sender.Position.X-recipient.Position.X)+Math.Abs(sender.Position.Y-recipient.Position.Y)!=1)
             throw new InvalidOperationException("Trade partners are not mutually identified and adjacent.");
         if(recipient.Inventory.Count(x=>x.Slot is >=1 and <=59)>=59)

@@ -29,10 +29,19 @@ public class DirectTradePreflightTests
         Assert.Equal(101u,result.RecipientTargetId);
     }
 
+    [Fact]
+    public void StationaryVisiblePartnersRemainValidAfterThreeMinutes()
+    {
+        var (sender,recipient,step)=Ready();
+        var old=DateTimeOffset.UtcNow.AddMinutes(-3);
+        sender=sender with{Partner=sender.Partner with{ObservedAt=old}};
+        recipient=recipient with{Partner=recipient.Partner with{ObservedAt=old}};
+        Assert.Equal(202u,DirectTradePreflight.Check(sender,recipient,step,Chest,DateTimeOffset.UtcNow).SenderTargetId);
+    }
+
     [Theory]
     [InlineData("wrong id")]
     [InlineData("not adjacent")]
-    [InlineData("stale target")]
     [InlineData("full recipient")]
     [InlineData("source pinned")]
     public void MismatchOrMissingRoomRejectsBeforeAnySend(string failure)
@@ -42,7 +51,6 @@ public class DirectTradePreflightTests
         {
             case "wrong id":sender=sender with{Partner=sender.Partner with{Id=999}};break;
             case "not adjacent":recipient=recipient with{Position=new Tile(20,20)};break;
-            case "stale target":sender=sender with{Partner=sender.Partner with{ObservedAt=DateTimeOffset.UtcNow.AddMinutes(-3)}};break;
             case "full recipient":recipient=recipient with{Inventory=Enumerable.Range(1,59)
                 .Select(slot=>new Item(slot,"Other",1,16)).ToArray()};break;
             case "source pinned":sender=sender with{PinnedSlots=new HashSet<int>{4}};break;

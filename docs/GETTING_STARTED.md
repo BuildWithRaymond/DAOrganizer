@@ -31,7 +31,7 @@ These are sorting preferences, not locks. Drag potions normally. Right-click any
 
 ## Read bank contents
 
-**Organization plan** shows possible cross-character consolidation. Choose a preferred holder, review exact source slot, quantity, destination and route, then select steps to save a review draft. Drafts expire after 30 minutes; the dialog shows their status and any transfer journal needing reconciliation. Potential slot savings are estimates. Current exact steps require more capacity and exchange evidence, so they cannot be approved or run. The organizer sends no exchange packets from this screen.
+**Organization plan** shows possible cross-character consolidation. For a one-unit direct trial, connect two organizer-launched clients, stand adjacent, choose a Direct route, click **Transfer one unit**, and confirm the exact item and characters. The organizer refreshes bank contents, checks both visible partner IDs, prepares and approves the route, exchanges the unit, then deposits it. If any action is unconfirmed, it stops without an automatic retry and shows the last verified holder under Transfer recovery. Use a low-value item for the first live trial. Advanced review drafts are available under the collapsed section. Potential slot savings remain estimates until a transfer and destination bank scan complete.
 
 For a controlled manual trade capture, connect two distinct organizer-launched clients, select both in **Organization plan**, and start capture. Complete one low-value trade manually, wait for both accepts, recipient inventory gain and exchange-window close, then stop and save. The capture stays under the local profile's `diagnostics/manual-trades` folder and contains names and packet payloads; do not share raw JSON.
 

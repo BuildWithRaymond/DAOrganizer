@@ -37,7 +37,7 @@ public class GameSessionTradeTargetTests
     }
 
     [Fact]
-    public void TargetMustBeNamedVisibleUniqueAndRecentlyObserved()
+    public void TargetMustBeNamedVisibleAndUniqueUntilRemoved()
     {
         using var replay=new Replay();
         replay.Receive(ServerCommand.UserAppearance,new ServerUserAppearanceMessage{UserId=10});
@@ -47,7 +47,7 @@ public class GameSessionTradeTargetTests
         var target=replay.Session.ResolveTradeTarget("Beta",now);
         Assert.Equal(11u,target.Id);
         Assert.Equal(new Tile(11,12),target.Position);
-        Assert.Throws<InvalidOperationException>(()=>replay.Session.ResolveTradeTarget("Beta",now.AddMinutes(3)));
+        Assert.Equal(11u,replay.Session.ResolveTradeTarget("Beta",now.AddMinutes(3)).Id);
         replay.Receive(ServerCommand.DrawHumanObjects,Human(12,"Beta",12,12));
         Assert.Throws<InvalidOperationException>(()=>replay.Session.ResolveTradeTarget("Beta",DateTimeOffset.UtcNow));
         replay.Receive(ServerCommand.RemoveObjects,new ServerRemoveObjectsMessage{EntityId=12});

@@ -74,6 +74,19 @@ public class OrganizationPlannerTests
     }
 
     [Fact]
+    public void RepeatingAnIdenticalBankScanKeepsThePlanFingerprint()
+    {
+        using var store=new InventoryStore(":memory:");
+        var item=new Item(1,"Chest",2,15,IsStackable:true);
+        store.SaveSnapshot("Alpha","Bank",[item],true);
+        var before=store.ReadOrganizationState().Fingerprint;
+        store.SaveSnapshot("Alpha","Bank",[item],true);
+        Assert.Equal(before,store.ReadOrganizationState().Fingerprint);
+        store.SaveSnapshot("Alpha","Bank",[item with{Quantity=1}],true);
+        Assert.NotEqual(before,store.ReadOrganizationState().Fingerprint);
+    }
+
+    [Fact]
     public void AccountAssignmentInvalidatesPlanFingerprint()
     {
         using var store=new InventoryStore(":memory:");store.EnsureCharacter("Alpha");

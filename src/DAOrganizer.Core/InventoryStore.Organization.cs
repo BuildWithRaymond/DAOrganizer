@@ -60,7 +60,11 @@ public sealed partial class InventoryStore
                 for(var i=0;i<characters.Count;i++)for(var j=i+1;j<characters.Count;j++)
                     coexist[OrganizationPlanner.PairKey(characters[i].Name,characters[j].Name)]=accounts.CanCoexist(characters[i].Name,characters[j].Name);
                 var middlemen=characters.Where(x=>MiddlemanCapable(x.Name)).Select(x=>x.Name).OrderBy(x=>x,StringComparer.OrdinalIgnoreCase).ToArray();
-                var payload=JsonSerializer.Serialize(new{characters,items,gameAccounts,assignments,roles,rules,metadata,overrides,tradeEvidence,settings,coexist,middlemen});
+                // A repeated scan with identical contents must not invalidate an approved plan.
+                // Observation times remain available in state but are not plan inputs.
+                var planCharacters=characters.Select(x=>new{x.Name,x.InventoryState,x.BankState});
+                var planItems=items.Select(x=>new{x.Character,x.Location,x.Item});
+                var payload=JsonSerializer.Serialize(new{characters=planCharacters,items=planItems,gameAccounts,assignments,roles,rules,metadata,overrides,tradeEvidence,settings,coexist,middlemen});
                 var fingerprint=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
                 return new(characters,items,gameAccounts,assignments,roles,rules,metadata,overrides,tradeEvidence,settings,coexist,middlemen,fingerprint);
     }

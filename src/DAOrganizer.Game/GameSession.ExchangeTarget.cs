@@ -20,7 +20,7 @@ public sealed partial class GameSession
             var named=_visibleTradeTargets.Values.Where(x=>x.Name.Equals(expectedPartner,StringComparison.OrdinalIgnoreCase)).ToArray();
             return new(Name,_connection is {IsConnected:true},Ready,MapId,MapName,Position,_playerId!=0,
                 _entityDrawPackets,_humanDrawPackets,_visibleTradeTargets.Count,named.Length,
-                named.Count(x=>x.MapId==MapId&&x.Id!=0&&x.ObservedAt<=now&&now-x.ObservedAt<=TimeSpan.FromMinutes(2)),
+                named.Count(x=>x.MapId==MapId&&x.Id!=0&&x.ObservedAt<=now),
                 named.Length==0?null:named.Max(x=>x.ObservedAt));
         }
     }
@@ -31,10 +31,9 @@ public sealed partial class GameSession
         lock(_gate)
         {
             var matches=_visibleTradeTargets.Values.Where(x=>x.MapId==MapId&&x.Id!=0&&
-                x.Name.Equals(name,StringComparison.OrdinalIgnoreCase)&&x.ObservedAt<=now&&
-                now-x.ObservedAt<=TimeSpan.FromMinutes(2)).ToArray();
+                x.Name.Equals(name,StringComparison.OrdinalIgnoreCase)&&x.ObservedAt<=now).ToArray();
             if(matches.Length!=1)
-                throw new InvalidOperationException("Expected partner is not uniquely visible with a recent server ID.");
+                throw new InvalidOperationException("Expected partner is not uniquely visible with a server ID.");
             return matches[0];
         }
     }

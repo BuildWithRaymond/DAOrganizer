@@ -161,7 +161,23 @@ Capture("storage-setup",storage);storage.Close();manager.Close();
 Click("Organization plan");
 var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);
 var trialButton=organization.GetVisualDescendants().OfType<Button>()
-    .Single(x=>x.Content as string=="Prepare one-unit controlled trial");
+    .Single(x=>x.Content as string=="Transfer one unit");
+var routeChoice=organization.GetVisualDescendants().OfType<ComboBox>()
+    .Single(x=>x.PlaceholderText=="Choose one Direct route");
+routeChoice.SelectedIndex=0;Dispatcher.UIThread.RunJobs();
+trialButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+var confirmation=organization.OwnedWindows.Single(x=>x.Title=="Confirm one-unit transfer");
+if(!confirmation.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text?.Contains("Move 1 ")==true))
+    throw new Exception("Transfer confirmation must name the one-unit move.");
+confirmation.GetVisualDescendants().OfType<Button>().Single(x=>x.Content as string=="Cancel")
+    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+if(app.Store.ListOrganizationPlans().Count!=0)
+    throw new Exception("Cancelling a direct transfer must not save or approve a plan.");
+var expanders=organization.GetVisualDescendants().OfType<Expander>().ToArray();
+var visibility=expanders.Single(x=>x.Header as string=="Visibility details (advanced)");
+var reviewExpander=expanders.Single(x=>x.Header as string=="Advanced review drafts");
+if(visibility.IsExpanded||reviewExpander.IsExpanded)throw new Exception("Advanced transfer controls should start collapsed.");
+visibility.IsExpanded=true;reviewExpander.IsExpanded=true;Dispatcher.UIThread.RunJobs();
 if(!organization.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Check live visibility"))
     throw new Exception("Missing read-only direct trade visibility check.");
 var firstCandidate=organization.GetVisualDescendants().OfType<CheckBox>()

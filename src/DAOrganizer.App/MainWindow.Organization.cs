@@ -10,8 +10,9 @@ public sealed partial class MainWindow
     private async Task OrganizationPreview()
     {
         var window=DialogWindow("Organization plan",780);var panel=DialogPanel();
-        var body=new StackPanel{Spacing=12};var status=Text("Review exact steps before approving a transfer.",12,true);
+        var body=new StackPanel{Spacing=12};var status=Text("Choose a Direct route, then confirm the one-unit transfer.",12,true);
         var createdAt=DateTimeOffset.UtcNow;
+        string? selectedRoute=null;
         void Render()
         {
             body.Children.Clear();
@@ -20,10 +21,11 @@ public sealed partial class MainWindow
             body.Children.Add(Text("Cross-character bank opportunities",22));
             if(!_app.IsDemo)
             {
-                body.Children.Add(Text("Manual trade packet capture",17));
+                var captureSection=new StackPanel{Spacing=8};
+                captureSection.Children.Add(Text("Manual trade packet capture",17));
                 if(_app.ManualTradeCaptureRunning)
                 {
-                    body.Children.Add(Button("Stop and save capture",()=>
+                    captureSection.Children.Add(Button("Stop and save capture",()=>
                     {
                         try
                         {
@@ -55,19 +57,20 @@ public sealed partial class MainWindow
                         return Task.CompletedTask;
                     });
                     start.IsEnabled=online.Length>=2;controls.Children.Add(start);
-                    body.Children.Add(controls);
-                    if(online.Length<2)body.Children.Add(Text("Connect two distinct ready clients to enable capture.",11,true));
+                    captureSection.Children.Add(controls);
+                    if(online.Length<2)captureSection.Children.Add(Text("Connect two distinct ready clients to enable capture.",11,true));
                 }
-                body.Children.Add(Text("Use two ready clients. Start capture, manually trade a small item and stack amount, finish both accepts, then save. Local JSON contains character names, item names, and packet payloads; redact names before sharing. No packets are sent by this feature.",11,true));
+                captureSection.Children.Add(Text("Use two ready clients. Start capture, manually trade a small item and stack amount, finish both accepts, then save. Local JSON contains character names, item names, and packet payloads; redact names before sharing. No packets are sent by this feature.",11,true));
+                body.Children.Add(new Expander{Header="Manual trade capture (advanced)",Content=captureSection});
             }
             body.Children.Add(Text($"{plan.Groups.Count} duplicate groups · {plan.CurrentBankSlots} current bank entries · up to {plan.PotentialSlotsFreed} entries could be freed",14));
             body.Children.Add(Text("Potential savings assume stacks can fit. Confirmed savings stay zero until stack limits, bank capacity, tradeability, and exchange are verified.",12,true));
             var exact=OrganizationPlanner.BuildExact(state,createdAt,createdAt.AddMinutes(30));
-            body.Children.Add(Text("Exact step review",17));
+            body.Children.Add(Text("Transfer between characters",17));
             if(exact is null)body.Children.Add(Text("No exact steps from current saved scans and holder choices.",12,true));
             else
             {
-                body.Children.Add(Text($"{exact.Steps.Length} candidates. Draft expires {exact.ExpiresAt.LocalDateTime:g}. Use the Direct route selector for a transfer test; the checkboxes below save review drafts.",12,true));
+                body.Children.Add(Text("Choose a Direct route to move one unit. Saved review drafts are under Advanced review.",12,true));
                 var selected=new List<(Guid Id,CheckBox Box)>();
                 var candidateRows=new StackPanel{Spacing=10};
                 foreach(var step in exact.Steps)
@@ -79,7 +82,7 @@ public sealed partial class MainWindow
                 if(!_app.IsDemo)
                 {
                     var direct=exact.Steps.Where(x=>x.RouteKind==TransferRouteKind.Direct).ToArray();
-                    body.Children.Add(Text($"Direct transfer test: {direct.Length} available routes",17));
+                    body.Children.Add(Text($"{direct.Length} Direct routes",17));
                     if(direct.Length==0)
                     {
                         body.Children.Add(Text("No Direct route yet. Assign the two characters to separate game accounts and set their coexistence to Yes.",12,true));
@@ -91,11 +94,27 @@ public sealed partial class MainWindow
                     }
                     else
                     {
-                        body.Children.Add(Text("Choose one route here. The controlled trial moves one unit.",12,true));
+                        body.Children.Add(Text("Choose one route. Transfer moves one unit after you confirm the exact item and characters.",12,true));
                         var labels=direct.Select(x=>$"{x.SourceCharacter} {x.SourceLocation} slot {x.SourceSlot}: {x.SourceItem.Name} → {x.DestinationCharacter} Bank").ToArray();
-                        var choice=new ComboBox{ItemsSource=labels,SelectedIndex=-1,Width=680,PlaceholderText="Choose one Direct route"};
+                        var choice=new ComboBox{ItemsSource=labels,SelectedIndex=Array.IndexOf(labels,selectedRoute),Width=680,PlaceholderText="Choose one Direct route"};
+                        choice.SelectionChanged+=(_,_)=>selectedRoute=choice.SelectedItem as string;
                         body.Children.Add(choice);
-                        body.Children.Add(Button("Check live visibility",() =>
+                        body.Children.Add(Button("Transfer one unit",async() =>
+                        {
+                            try
+                            {
+                                if(choice.SelectedIndex<0||choice.SelectedIndex>=direct.Length)
+                                    throw new InvalidOperationException("Choose one Direct route from the list above.");
+                                var step=direct[choice.SelectedIndex];
+                                if(!await ConfirmOneUnitTransfer(window,step))return;
+                                status.Text="Refreshing banks and running the one-unit transfer. Keep both clients open.";
+                                await _app.RunOperation(t=>_app.ExecuteOneUnitDirectTrial(step,t));
+                                status.Text="Transfer and destination bank confirmed.";
+                            }
+                            catch(Exception ex){status.Text="Transfer stopped: "+ex.Message+" Review recovery below.";}
+                            Render();
+                        },"primary"));
+                        body.Children.Add(new Expander{Header="Visibility details (advanced)",Content=Button("Check live visibility",() =>
                         {
                             try
                             {
@@ -108,50 +127,20 @@ public sealed partial class MainWindow
                                 string Line(TradeTargetInspection view)
                                 {
                                     var age=view.LatestMatchAt is { } seen?$"{Math.Max(0,(int)(now-seen).TotalSeconds)}s ago":"never";
-                                    return $"{view.Name}: {(view.Connected?"connected":"disconnected")}, map {view.MapId} ({view.Position.X},{view.Position.Y}), own ID {(view.PlayerIdKnown?"yes":"no")}, partner {view.NamedMatches} named/{view.RecentMatches} recent (last {age}), other visible {view.VisibleTargets}; draw packets 0x07={view.EntityDrawPackets}, 0x33={view.HumanDrawPackets}.";
+                                    return $"{view.Name}: {(view.Connected?"connected":"disconnected")}, map {view.MapId} ({view.Position.X},{view.Position.Y}), own ID {(view.PlayerIdKnown?"yes":"no")}, partner {view.NamedMatches} named/{view.RecentMatches} visible (last {age}), other visible {view.VisibleTargets}; draw packets 0x07={view.EntityDrawPackets}, 0x33={view.HumanDrawPackets}.";
                                 }
                                 status.Text=Line(sender.InspectTradeTarget(recipient.Name,now))+"\n"+
                                     Line(recipient.InspectTradeTarget(sender.Name,now));
                             }
                             catch(Exception ex){status.Text=ex.Message;}
                             return Task.CompletedTask;
-                        }));
-                    Task Prepare(bool trial)
-                    {
-                        try
-                        {
-                            if(choice.SelectedIndex<0||choice.SelectedIndex>=direct.Length)
-                                throw new InvalidOperationException("Choose one Direct route from the list above.");
-                            var step=direct[choice.SelectedIndex];
-                            var chosen=trial?OrganizationPlanSelection.SelectOneUnit(exact,state,step.Id):
-                                OrganizationPlanSelection.Select(exact,state,[step.Id]);
-                            var sender=_app.Session(step.SourceCharacter)??throw new InvalidOperationException("Source is offline. Connect both organizer-launched clients first.");
-                            var recipient=_app.Session(step.DestinationCharacter)??throw new InvalidOperationException("Recipient is offline. Connect both organizer-launched clients first.");
-                            var now=DateTimeOffset.UtcNow;
-                            var ready=DirectPlanReadiness.Promote(chosen,state,
-                                sender.CaptureTradeEndpoint(recipient.Name,now),
-                                recipient.CaptureTradeEndpoint(sender.Name,now),now,trial);
-                            if(_app.Store.ReadOrganizationState().Fingerprint!=state.Fingerprint)
-                                throw new StaleOrganizationPlanException("Saved state changed. Reopen organization review.");
-                            ready=ready with{Id=Guid.NewGuid()};
-                            _app.Store.SaveOrganizationPlan(ready);
-                            status.Text=trial?
-                                "One-unit controlled trial saved. It may stop with the item on either character. Review, then Approve.":
-                                "Ready draft saved. Review the exact step below, then Approve.";
-                            Render();
-                        }
-                        catch(Exception ex){status.Text=ex.Message;}
-                        return Task.CompletedTask;
-                    }
-                        var controls=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
-                        controls.Children.Add(Button("Prepare one-unit controlled trial",()=>Prepare(true)));
-                        controls.Children.Add(Button("Prepare selected direct step",()=>Prepare(false)));
-                        body.Children.Add(controls);
+                        })});
                     }
                 }
-                body.Children.Add(Text("Review candidates",17));
+                var review=new StackPanel{Spacing=10};
+                review.Children.Add(Text("Review candidates",17));
                 if(!_app.IsDemo)
-                    body.Children.Add(Button("Save selected review draft",()=>
+                    review.Children.Add(Button("Save selected review draft",()=>
                     {
                         try
                         {
@@ -169,9 +158,9 @@ public sealed partial class MainWindow
                         catch(Exception ex){status.Text=ex.Message;}
                         return Task.CompletedTask;
                     }));
-                body.Children.Add(new ScrollViewer{Content=candidateRows,MaxHeight=220});
-                body.Children.Add(Text("For a ready direct step: both clients must be adjacent and mutually visible; an inventory source is exact, or a bank source can withdraw one uniquely named unit; destination bank has a scanned matching stack with known room; trade evidence is positive. Select one step, prepare, then approve.",11,true));
-                body.Children.Add(Text("Controlled trial permits one low-value unit before tradeability or bank capacity is known. If exchange or deposit is refused, recovery shows the last verified holder. No automatic retry is sent.",11,true));
+                review.Children.Add(new ScrollViewer{Content=candidateRows,MaxHeight=220});
+                review.Children.Add(Text("Controlled trial permits one low-value unit before tradeability or bank capacity is known. If exchange or deposit is refused, recovery shows the last verified holder. No automatic retry is sent.",11,true));
+                body.Children.Add(new Expander{Header="Advanced review drafts",Content=review});
             }
             if(!_app.IsDemo)
             {
@@ -251,5 +240,20 @@ public sealed partial class MainWindow
         Render();panel.Children.Add(new ScrollViewer{Content=body,MaxHeight=630});panel.Children.Add(status);
         var close=new Button{Content="Close"};close.Click+=(_,_)=>window.Close();panel.Children.Add(close);
         window.Content=panel;await window.ShowDialog(this);
+    }
+
+    private async Task<bool> ConfirmOneUnitTransfer(Window owner,PlannedOrganizationStep step)
+    {
+        var window=DialogWindow("Confirm one-unit transfer",480);var panel=DialogPanel();
+        panel.Children.Add(Text($"Move 1 {step.SourceItem.Name}",20));
+        panel.Children.Add(Text($"From: {step.SourceCharacter} {step.SourceLocation} slot {step.SourceSlot}\nTo: {step.DestinationCharacter} Bank",14));
+        panel.Children.Add(Text("Both clients must stay open. The organizer will refresh bank contents, exchange one unit, and bank it. If confirmation fails, check Transfer recovery before trying again.",12,true));
+        var confirmed=false;
+        var buttons=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
+        buttons.Children.Add(Button("Confirm transfer",() =>{confirmed=true;window.Close();return Task.CompletedTask;},"primary"));
+        buttons.Children.Add(Button("Cancel",() =>{window.Close();return Task.CompletedTask;}));
+        panel.Children.Add(buttons);window.Content=panel;
+        await window.ShowDialog(owner);
+        return confirmed;
     }
 }

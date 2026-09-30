@@ -7,6 +7,36 @@ namespace DAOrganizer.App;
 
 public sealed partial class Organizer
 {
+    public async Task ExecuteOneUnitDirectTrial(PlannedOrganizationStep selected,CancellationToken token)
+    {
+        RequireLiveProfile();
+        if(ManualTradeCaptureRunning)throw new InvalidOperationException("Stop the manual trade capture first.");
+        token.ThrowIfCancellationRequested();
+        if(selected.RouteKind!=TransferRouteKind.Direct)
+            throw new InvalidOperationException("Choose a Direct route.");
+        var sender=Session(selected.SourceCharacter)??throw new InvalidOperationException("Source session is offline.");
+        var recipient=Session(selected.DestinationCharacter)??throw new InvalidOperationException("Recipient session is offline.");
+        if(selected.SourceLocation=="Bank")await sender.ScanNearbyBank(null,token);
+        if(Store.Freshness(recipient.Name,"Bank")!="Current")await recipient.ScanNearbyBank(null,token);
+        var state=Store.ReadOrganizationState();
+        var now=DateTimeOffset.UtcNow;
+        var exact=OrganizationPlanner.BuildExact(state,now,now.AddMinutes(30))
+            ??throw new InvalidOperationException("No route remains after refreshing bank contents.");
+        var match=exact.Steps.FirstOrDefault(x=>x.RouteKind==TransferRouteKind.Direct&&
+            x.SourceCharacter.Equals(selected.SourceCharacter,StringComparison.OrdinalIgnoreCase)&&
+            x.DestinationCharacter.Equals(selected.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&
+            x.SourceLocation==selected.SourceLocation&&x.SourceSlot==selected.SourceSlot&&
+            OrganizationPlanContract.ItemFingerprint(x.SourceItem)==OrganizationPlanContract.ItemFingerprint(selected.SourceItem))
+            ??throw new InvalidOperationException("Selected route changed after bank refresh. Choose it again.");
+        var chosen=OrganizationPlanSelection.SelectOneUnit(exact,state,match.Id);
+        var ready=DirectPlanReadiness.Promote(chosen,state,
+            sender.CaptureTradeEndpoint(recipient.Name,now),
+            recipient.CaptureTradeEndpoint(sender.Name,now),now,true) with{Id=Guid.NewGuid()};
+        Store.SaveOrganizationPlan(ready);
+        Store.ApproveOrganizationPlan(ready.Id,DateTimeOffset.UtcNow);
+        await ExecuteApprovedDirectPlan(ready.Id,token);
+    }
+
     public async Task ExecuteApprovedDirectPlan(Guid planId,CancellationToken token)
     {
         RequireLiveProfile();
@@ -38,6 +68,14 @@ public sealed partial class Organizer
             DirectTradePreflight.Check(source,destination,step,carried,now);
         }
         else DirectTradePreflight.CheckPartners(source,destination,step,now);
+        DateTimeOffset? approvedBankScan=null;
+        if(step.SourceLocation=="Bank")
+        {
+            await sender.ScanNearbyBank(null,token);
+            approvedBankScan=sender.LastBankScan;
+            // A changed bank is rejected before the custody journal or any item packet.
+            Store.CheckNextOrganizationStep(planId,DateTimeOffset.UtcNow);
+        }
         var run=Store.BeginTransferPreparation(planId,DateTimeOffset.UtcNow);
         var senderCapture=false;var recipientCapture=false;
         ManualTradeResult? senderResult=null,recipientResult=null;
@@ -45,7 +83,7 @@ public sealed partial class Organizer
         {
             if(step.SourceLocation=="Bank")
             {
-                carried=await sender.WithdrawApprovedTransferOne(step.SourceItem,token);
+                carried=await sender.WithdrawApprovedTransferOne(step.SourceItem,approvedBankScan!.Value,token);
                 if(carried is null)throw new InvalidOperationException("Source withdrawal was not confirmed; no exchange sent.");
             }
             var ordered=new[]{sender,recipient}.OrderBy(x=>x.ProcessId).ToArray();

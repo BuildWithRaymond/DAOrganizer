@@ -76,6 +76,46 @@ public class TransferJournalTests
     }
 
     [Fact]
+    public void KnownPreSendBankAgeFailureReleasesOnlyItsSourceReservation()
+    {
+        using var store=new InventoryStore(":memory:");
+        store.SaveSnapshot("Alpha","Bank",[Chest],true);
+        store.SaveSnapshot("Bravo","Bank",[],true);
+        var plan=ReadyPlan(store);store.SaveOrganizationPlan(plan);
+        store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+        var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
+        store.MarkTransferNeedsReconciliation(run.Id,
+            "Source bank scan is too old for an approved withdrawal.",DateTimeOffset.UtcNow);
+
+        Assert.Equal(1,store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow));
+        Assert.Equal(TransferRunState.Failed,store.LoadTransferRun(run.Id)!.State);
+        Assert.Equal(0,store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow));
+
+        var newPlan=ReadyPlan(store);store.SaveOrganizationPlan(newPlan);
+        store.ApproveOrganizationPlan(newPlan.Id,DateTimeOffset.UtcNow);
+        Assert.Equal(TransferRunState.Preparing,
+            store.BeginTransferPreparation(newPlan.Id,DateTimeOffset.UtcNow).State);
+    }
+
+    [Fact]
+    public void BankAgeReasonAfterCustodyActionStillNeedsReconciliation()
+    {
+        using var store=new InventoryStore(":memory:");
+        store.SaveSnapshot("Alpha","Bank",[Chest],true);
+        store.SaveSnapshot("Bravo","Bank",[],true);
+        var plan=ReadyPlan(store);store.SaveOrganizationPlan(plan);
+        store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+        var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
+        store.AdvanceTransferRun(run.Id,TransferRunState.Preparing,TransferRunState.InSourceInventory,
+            "Synthetic withdrawal",DateTimeOffset.UtcNow);
+        store.MarkTransferNeedsReconciliation(run.Id,
+            "Source bank scan is too old for an approved withdrawal.",DateTimeOffset.UtcNow);
+
+        Assert.Equal(0,store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow));
+        Assert.Equal(TransferRunState.NeedsReconciliation,store.LoadTransferRun(run.Id)!.State);
+    }
+
+    [Fact]
     public void JournalStagesAreOrderedAndOnlyDeliveryChangesHolder()
     {
         using var store=new InventoryStore(":memory:");
