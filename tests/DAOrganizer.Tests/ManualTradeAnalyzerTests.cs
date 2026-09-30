@@ -17,11 +17,10 @@ public class ManualTradeAnalyzerTests
     {
         var (sender,recipient)=PartialStack();
         var result=ManualTradeAnalyzer.Analyze(sender,recipient);
-        Assert.True(result.Verified,result.Reason);
-        Assert.Equal("Alpha",result.Sender);
-        Assert.Equal("Beta",result.Recipient);
-        Assert.Equal("Chest",result.Item?.Name);
-        Assert.Equal(2,result.Quantity);
+        Assert.False(result.Verified);
+        Assert.Equal(ManualTradeOutcome.Inconclusive,result.Outcome);
+        Assert.True(result.Evidence?.EarlyEventFiveObserved);
+        Assert.False(result.Evidence?.SuccessfulFinalSignalOnBothSides);
     }
 
     [Fact]
@@ -30,6 +29,71 @@ public class ManualTradeAnalyzerTests
         var (sender,recipient)=PartialStack();
         recipient=recipient with {AfterInventory=[]};
         Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+        Assert.Equal(ManualTradeOutcome.Inconclusive,ManualTradeAnalyzer.Analyze(sender,recipient).Outcome);
+    }
+
+    [Fact]
+    public void EarlyEventFiveWithoutPostAcceptFinalSignalIsInconclusive()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with {Packets=sender.Packets.Where(x=>!(x.Direction=="Server"&&x.Opcode==0x42&&
+            x.PayloadHex.StartsWith("0501",StringComparison.Ordinal)&&x.ObservedAt>recipient.Packets
+                .Single(y=>y.Direction=="Client").ObservedAt)).ToArray()};
+        var result=ManualTradeAnalyzer.Analyze(sender,recipient);
+        Assert.False(result.Verified);Assert.True(result.Evidence?.EarlyEventFiveObserved);
+    }
+
+    [Fact]
+    public void UnknownCloseSubtypeStaysAResearchLead()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with {FilteredTimeline=[new(sender.FinishedAt.AddMilliseconds(-1),"Server",0x7A)]};
+        var result=ManualTradeAnalyzer.Analyze(sender,recipient);
+        Assert.False(result.Verified);Assert.True(result.Evidence?.UnknownCloseSignalObserved);
+    }
+
+    [Fact]
+    public void RuntimeIdReuseAndDuplicateEventsAreInconclusive()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with {Packets=[sender.Packets[0],sender.Packets[0],..sender.Packets.Skip(1)]};
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+    }
+
+    [Fact]
+    public void OutOfOrderTimingIsInconclusive()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with {Packets=sender.Packets.Select((x,i)=>i==1?x with {ObservedAt=sender.StartedAt.AddSeconds(-1)}:x).ToArray()};
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+    }
+
+    [Fact]
+    public void DisconnectOrTruncationIsInconclusive()
+    {
+        var (sender,recipient)=PartialStack();
+        recipient=recipient with {FilteredTimeline=[new(recipient.FinishedAt,"Server",0x4C)]};
+        recipient=recipient with {Packets=recipient.Packets.Where(x=>x.Direction!="Client").ToArray()};
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient with {Truncated=true}).Verified);
+    }
+
+    [Fact]
+    public void ExplicitItemSpecificDenialIsSeparateFromAmbiguousCancellation()
+    {
+        var (sender,recipient)=PartialStack();
+        var denial=Server(new ServerExchangeMessage{Event=ExchangeServerEventType.Cancelled,Party=ExchangeParty.You,
+            Message="You cannot exchange that item."}) with {ObservedAt=sender.StartedAt.AddSeconds(4)};
+        sender=sender with {AfterInventory=sender.BeforeInventory,
+            Packets=[..sender.Packets.Take(3),denial]};
+        recipient=recipient with {AfterInventory=recipient.BeforeInventory,Packets=[recipient.Packets[0]]};
+        var result=ManualTradeAnalyzer.Analyze(sender,recipient);
+        Assert.Equal(ManualTradeOutcome.ExplicitItemDenied,result.Outcome);
+        Assert.True(result.ExplicitItemDenialObserved);Assert.False(result.Verified);
+
+        sender=sender with {Packets=[..sender.Packets.Take(3),denial with {PayloadHex=Server(new ServerExchangeMessage
+            {Event=ExchangeServerEventType.Cancelled,Party=ExchangeParty.You,Message="Exchange ended."}).PayloadHex}]};
+        Assert.Equal(ManualTradeOutcome.Inconclusive,ManualTradeAnalyzer.Analyze(sender,recipient).Outcome);
     }
 
     [Fact]
@@ -84,6 +148,22 @@ public class ManualTradeAnalyzerTests
     }
 
     [Fact]
+    public void PartialStackSuffixAllowsWhitespaceButNotDifferentQuantity()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=ReplaceOffer(sender,"Chest (2)");recipient=ReplaceOffer(recipient,"Chest (2)");
+        Assert.Equal(ManualTradeOutcome.Inconclusive,ManualTradeAnalyzer.Analyze(sender,recipient).Outcome);
+    }
+
+    [Fact]
+    public void SameKeyDurabilityChangeFailsExactConservation()
+    {
+        var (sender,recipient)=PartialStack();
+        recipient=recipient with {AfterInventory=[recipient.AfterInventory[0] with {Durability=1}]};
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+    }
+
+    [Fact]
     public void AddItemWithUnexpectedTrailingQuantityByteIsInconclusive()
     {
         var (sender,recipient)=PartialStack();
@@ -127,10 +207,20 @@ public class ManualTradeAnalyzerTests
             Server(new ServerAddInventoryMessage{Slot=3,Sprite=77,Name="Chest",Quantity=2,IsStackable=true}),
             Server(new ServerExchangeMessage{Event=ExchangeServerEventType.Accepted,Party=ExchangeParty.You,Message="You exchanged."})
         };
+        senderPackets=senderPackets.Select((x,i)=>x with {ObservedAt=now.AddSeconds(new[]{1,2,3,4,5,6,7,8,9,12}[i])}).ToArray();
+        recipientPackets=recipientPackets.Select((x,i)=>x with {ObservedAt=now.AddSeconds(new[]{1,7,9,10,11,12}[i])}).ToArray();
         return (
-            new ManualTradeResult("operation","Alpha",1,now,now.AddSeconds(10),[item],[item with {Quantity=3}],0,0,senderPackets,false),
-            new ManualTradeResult("operation","Beta",2,now,now.AddSeconds(10),[],[new Item(3,"Chest",2,77,0,IsStackable:true)],0,0,recipientPackets,false));
+            new ManualTradeResult("operation","Alpha",1,now,now.AddSeconds(13),[item],[item with {Quantity=3}],0,0,senderPackets,false),
+            new ManualTradeResult("operation","Beta",2,now,now.AddSeconds(13),[],[new Item(3,"Chest",2,77,0,IsStackable:true)],0,0,recipientPackets,false));
     }
+
+    private static ManualTradeResult ReplaceOffer(ManualTradeResult result,string name)=>result with
+    {
+        Packets=result.Packets.Select(x=>x.Direction=="Server"&&x.Opcode==0x42&&x.PayloadHex.StartsWith("02",StringComparison.Ordinal)?
+            Server(new ServerExchangeMessage{Event=ExchangeServerEventType.ItemAdded,
+                Party=x.PayloadHex.StartsWith("0200",StringComparison.Ordinal)?ExchangeParty.You:ExchangeParty.Them,
+                ItemIndex=1,ItemSprite=77,ItemName=name}) with {ObservedAt=x.ObservedAt}:x).ToArray()
+    };
 
     private static TradePacketTrace Client(ClientExchangeMessage message)
     {
