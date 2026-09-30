@@ -55,6 +55,12 @@ public class InventoryTests
         db.SaveSnapshot("Alice","Inventory",[],true);
         Assert.Empty(db.Items("Alice","Inventory"));
     }
+    [Fact] public void ObservedStackabilitySurvivesSnapshotReload()
+    {
+        using var db=new InventoryStore(":memory:");
+        db.SaveSnapshot("Alice","Inventory",[new Item(1,"Water Dungeon Chest",8,15,IsStackable:true)],true);
+        Assert.True(Assert.Single(db.Items("Alice","Inventory")).IsStackable);
+    }
     [Fact] public void RoutesRespectDirectedPortals()
     {
         var graph = new WorldGraph([new(1,"Start",10,10,[new(1,9,5,2,0,5)]),new(2,"Bank",10,10,[])]);

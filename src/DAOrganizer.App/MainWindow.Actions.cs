@@ -120,11 +120,26 @@ public sealed partial class MainWindow
         var window=DialogWindow(item.Name,440);var panel=DialogPanel();
         panel.Children.Add(Text(item.Name,22));panel.Children.Add(Text($"Slot {item.Slot} · Quantity {item.Quantity:N0}",14));
         if(item.MaxDurability is >0)panel.Children.Add(Text($"Durability {item.Durability:N0} / {item.MaxDurability:N0}",13,true));
-        panel.Children.Add(Text("Drop / trade: unknown. Inventory data does not include this permission.",12,true));
+        var metadata=_app.Store.GetItemMetadata(item);
+        var evidence=_app.Store.TradeEvidence(item);
+        panel.Children.Add(Text($"Trade: {metadata?.Tradeability.ToString()??evidence.State.ToString()} (local verified {evidence.Successes} success, {evidence.ExplicitRejections} rejection).",12,true));
         panel.Children.Add(RuleEditor(item));
         panel.Children.Add(Text("Category",12,true));var category=new TextBox{Text=item.Category};panel.Children.Add(category);
-        panel.Children.Add(Text($"Group: {ItemCategories.Family(item)}. Automatic categories use Vorlof references, item names and observed equipment. Enter a category here to override it for this item name.",12,true));
-        panel.Children.Add(Button("Save category",()=>{_app.Store.Put("category/"+item.Name.ToLowerInvariant(),string.IsNullOrWhiteSpace(category.Text)?"Other":category.Text.Trim());window.Close();return Task.CompletedTask;},"primary"));
+        panel.Children.Add(Text($"Group: {ItemCategories.Family(item)}. Set an exact-item category override here.",12,true));
+        var characters=_app.Store.Characters().Select(x=>x.Name).ToArray();
+        var preference=_app.Store.GetItemOverride(item);
+        panel.Children.Add(Text("Preferred storage character",12,true));
+        var holder=new ComboBox{ItemsSource=new[]{"No preference"}.Concat(characters).ToArray(),SelectedItem=preference?.DestinationCharacter??"No preference"};
+        panel.Children.Add(holder);
+        var neverMove=new CheckBox{Content="Never move this item between characters",IsChecked=preference?.NeverMove??false};
+        panel.Children.Add(neverMove);
+        panel.Children.Add(Button("Save item preferences",()=>
+        {
+            var destination=holder.SelectedItem as string;
+            _app.Store.SetItemOverride(item,new ItemOverride(string.IsNullOrWhiteSpace(category.Text)?null:category.Text.Trim(),
+                destination=="No preference"?null:destination,neverMove.IsChecked==true));
+            window.Close();Refresh(true);return Task.CompletedTask;
+        },"primary"));
         window.Content=panel;await window.ShowDialog(this);
     }
     private async Task Message(string title,string message)

@@ -18,6 +18,8 @@ public class ServerExchangeMessage : ServerMessage
     public string? ItemName { get; set; }
     public uint? GoldAmount { get; set; }
     public string? Message { get; set; }
+    // Some captured variants carry an additional byte whose meaning is not yet known.
+    public byte[] TrailingData { get; set; } = [];
     
     public override void Deserialize(NetworkPacketReader reader)
     {
@@ -50,6 +52,7 @@ public class ServerExchangeMessage : ServerMessage
                 Message = reader.ReadString8();
                 break;
         }
+        TrailingData = reader.ReadBytes(reader.Remaining);
     }
 
     public override void Serialize(ref NetworkPacketBuilder builder)
@@ -83,5 +86,6 @@ public class ServerExchangeMessage : ServerMessage
                 builder.AppendString8(Message ?? string.Empty);
                 break;
         }
+        builder.AppendBytes(TrailingData);
     }
 }

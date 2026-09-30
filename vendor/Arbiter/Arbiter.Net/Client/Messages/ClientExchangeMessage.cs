@@ -41,7 +41,11 @@ public class ClientExchangeMessage : ClientMessage
     
         switch (Action)
         {
-            case ExchangeClientActionType.AddItem or ExchangeClientActionType.AddStackableItem:
+            case ExchangeClientActionType.AddItem:
+                // Manual client capture: action + target ID + inventory slot (no quantity byte).
+                builder.AppendByte(Slot ?? 0);
+                break;
+            case ExchangeClientActionType.AddStackableItem:
                 builder.AppendByte(Slot ?? 0);
                 builder.AppendByte(Quantity ?? 1);
                 break;

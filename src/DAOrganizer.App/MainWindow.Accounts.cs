@@ -79,14 +79,15 @@ public sealed partial class MainWindow
             Refresh(true);
         },"primary");
         var stop=Button("Stop",()=>{_app.Stop();message.Text="Stopping; safely logging out owned client…";return Task.CompletedTask;});
-        actions.Children.Add(add);actions.Children.Add(run);actions.Children.Add(stop);panel.Children.Add(actions);
+        var storage=Button("Game accounts & storage",()=>StorageSetup(window));
+        actions.Children.Add(add);actions.Children.Add(storage);actions.Children.Add(run);actions.Children.Add(stop);panel.Children.Add(actions);
         panel.Children.Add(new ScrollViewer{Content=table,MaxHeight=430});panel.Children.Add(message);
         panel.Children.Add(Text("Passwords stay in Windows Credential Manager. Remove login clears that saved password and hides the character; saved item history is retained.",12,true));
         var done=new Button{Content="Close"};done.Click+=(_,_)=>window.Close();panel.Children.Add(done);Render();
         var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(300)};
         timer.Tick+=(_,_)=>
         {
-            add.IsEnabled=run.IsEnabled=!_app.Busy;stop.IsEnabled=_app.QueueRunning;
+            add.IsEnabled=run.IsEnabled=storage.IsEnabled=!_app.Busy;stop.IsEnabled=_app.QueueRunning;
             foreach(var control in editable)control.IsEnabled=!_app.Busy;
             foreach(var (name,label) in resultLabels)if(_app.QueueProgress.TryGetValue(name,out var state))label.Text=state.State+(state.Detail.Length>0?" · "+state.Detail:"");
             if(_app.QueueRunning)message.Text=_app.QueueStatus;

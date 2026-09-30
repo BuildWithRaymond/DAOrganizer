@@ -136,7 +136,18 @@ filter.GetVisualDescendants().OfType<CheckBox>().Single(x=>x.Content as string==
 filter.Close();Capture("all-accounts-filtered");
 if(app.Accounts.Items("").Count!=89)throw new Exception("Display filtering failed.");
 if(app.Store.Items("Storage","Inventory").Count!=1)throw new Exception("Hiding must not remove history.");
+app.Store.SaveSnapshot("Example","Bank",app.Store.Items("Example","Bank").Append(new Item(81,"Water Dungeon Chest",1,15,IsStackable:true)),true);
+app.Store.SaveSnapshot("Storage","Bank",[new Item(1,"Water Dungeon Chest",1,15,IsStackable:true)],true);
+var storageRole=app.Accounts.AddStorageRole("Storage","Chests");
+app.Accounts.AddStorageRule(storageRole.Id,StorageMatchKind.Item,ItemGroups.Key(new Item(1,"Water Dungeon Chest",1,15)));
 Click("Account manager");
-var manager=window.OwnedWindows.Single(x=>x.Title=="Account manager");Capture("account-manager",manager);manager.Close();
+var manager=window.OwnedWindows.Single(x=>x.Title=="Account manager");Capture("account-manager",manager);
+manager.GetVisualDescendants().OfType<Button>().First(x=>x.Content as string=="Game accounts & storage")
+    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+var storage=manager.OwnedWindows.Single(x=>x.Title=="Game accounts & storage");
+storage.GetVisualDescendants().OfType<ComboBox>().First().SelectedItem="Storage";Dispatcher.UIThread.RunJobs();
+Capture("storage-setup",storage);storage.Close();manager.Close();
+Click("Organization plan");
+var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);organization.Close();
 window.Close();
 Console.WriteLine("UI checks completed. Synthetic data only.");

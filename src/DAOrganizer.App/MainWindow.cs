@@ -46,6 +46,7 @@ public sealed partial class MainWindow:Window
         var sideBottom=new StackPanel{Spacing=8};
         sideBottom.Children.Add(Button("+  Add character",()=>EditCharacter(),"quiet"));
         sideBottom.Children.Add(Button("Account manager",AccountManager,"quiet"));
+        sideBottom.Children.Add(Button("Organization plan",OrganizationPreview,"quiet"));
         sideBottom.Children.Add(Button("Settings",()=>Settings(),"quiet"));
         DockPanel.SetDock(sideBottom,Dock.Bottom);sidebar.Children.Add(sideBottom);
         sidebar.Children.Add(new ScrollViewer{Content=_characters});

@@ -53,6 +53,16 @@ public class SessionTests
         try{message.Serialize(ref builder);return (ServerPacket)builder.ToPacket();}finally{builder.Dispose();}
     }
     [Fact]
+    public void InventoryPacketKeepsObservedStackability()
+    {
+        using var store=new InventoryStore(":memory:");using var session=new GameSession(store);using var connection=Connection();
+        Observe(session,connection,Packet(ServerCommand.AddInventory,new ServerAddInventoryMessage
+        {
+            Slot=4,Name="Water Dungeon Chest",Quantity=8,Sprite=15,IsStackable=true
+        }));
+        Assert.True(Assert.Single(session.Inventory()).IsStackable);
+    }
+    [Fact]
     public async Task PacketReplayCommitsAfterLoginThenTracksRemoval()
     {
         using var store=new InventoryStore(":memory:");using var session=new GameSession(store);using var connection=Connection();

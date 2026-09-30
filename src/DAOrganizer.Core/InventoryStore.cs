@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 using System.Text.Json;
 namespace DAOrganizer.Core;
 
-public sealed class InventoryStore:IDisposable
+public sealed partial class InventoryStore:IDisposable
 {
     private readonly SqliteConnection _db;
     private readonly Lock _gate=new();
@@ -11,14 +11,100 @@ public sealed class InventoryStore:IDisposable
         if(path!=":memory:") Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         _db=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=path}.ToString());
         _db.Open();
-        Execute("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
-        Execute("""
-            CREATE TABLE IF NOT EXISTS characters(name TEXT PRIMARY KEY COLLATE NOCASE,last_seen TEXT);
-            CREATE TABLE IF NOT EXISTS snapshots(character TEXT COLLATE NOCASE,location TEXT,state TEXT,updated TEXT,PRIMARY KEY(character,location));
-            CREATE TABLE IF NOT EXISTS items(character TEXT COLLATE NOCASE,location TEXT,slot INTEGER,data TEXT,PRIMARY KEY(character,location,slot));
-            CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
-            PRAGMA user_version=1;
-            """);
+        try
+        {
+            using var versionCommand=_db.CreateCommand();versionCommand.CommandText="PRAGMA user_version";
+            var version=Convert.ToInt32(versionCommand.ExecuteScalar());
+            if(version>2)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
+            if(version==1&&path!=":memory:")
+            {
+                var backup=Path.GetFullPath(path)+".v1.backup";
+                if(!File.Exists(backup))
+                {
+                    var temporary=backup+".tmp";
+                    if(File.Exists(temporary))File.Delete(temporary);
+                    try
+                    {
+                        using(var destination=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=temporary,Pooling=false}.ToString()))
+                        {
+                            destination.Open();_db.BackupDatabase(destination);
+                        }
+                        File.Move(temporary,backup);
+                    }
+                    finally{if(File.Exists(temporary))File.Delete(temporary);}
+                }
+            }
+            Execute("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
+            Execute("""
+                CREATE TABLE IF NOT EXISTS characters(name TEXT PRIMARY KEY COLLATE NOCASE,last_seen TEXT);
+                CREATE TABLE IF NOT EXISTS snapshots(character TEXT COLLATE NOCASE,location TEXT,state TEXT,updated TEXT,PRIMARY KEY(character,location));
+                CREATE TABLE IF NOT EXISTS items(character TEXT COLLATE NOCASE,location TEXT,slot INTEGER,data TEXT,PRIMARY KEY(character,location,slot));
+                CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
+                """);
+            if(version<2)
+            {
+                using var migration=_db.BeginTransaction();
+                Execute("""
+                    CREATE TABLE game_accounts(
+                        id INTEGER PRIMARY KEY,
+                        label TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                        same_account_coexistence TEXT NOT NULL DEFAULT 'Unknown'
+                            CHECK(same_account_coexistence IN ('Yes','No','Unknown')));
+                    CREATE TABLE character_accounts(
+                        character TEXT PRIMARY KEY COLLATE NOCASE REFERENCES characters(name) ON DELETE CASCADE,
+                        account_id INTEGER NOT NULL REFERENCES game_accounts(id));
+                    CREATE TABLE account_coexistence_overrides(
+                        account_a INTEGER NOT NULL REFERENCES game_accounts(id) ON DELETE CASCADE,
+                        account_b INTEGER NOT NULL REFERENCES game_accounts(id) ON DELETE CASCADE,
+                        policy TEXT NOT NULL CHECK(policy IN ('Yes','No','Unknown')),
+                        evidence TEXT NOT NULL DEFAULT 'User',
+                        PRIMARY KEY(account_a,account_b),CHECK(account_a<account_b));
+                    CREATE TABLE character_transfer_settings(
+                        character TEXT PRIMARY KEY COLLATE NOCASE REFERENCES characters(name) ON DELETE CASCADE,
+                        middleman_capable INTEGER NOT NULL DEFAULT 0 CHECK(middleman_capable IN (0,1)));
+                    CREATE TABLE storage_roles(
+                        id INTEGER PRIMARY KEY,
+                        character TEXT NOT NULL COLLATE NOCASE REFERENCES characters(name) ON DELETE CASCADE,
+                        label TEXT NOT NULL,
+                        priority INTEGER NOT NULL DEFAULT 0,
+                        enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+                        UNIQUE(character,label));
+                    CREATE TABLE storage_role_rules(
+                        id INTEGER PRIMARY KEY,
+                        role_id INTEGER NOT NULL REFERENCES storage_roles(id) ON DELETE CASCADE,
+                        match_kind TEXT NOT NULL CHECK(match_kind IN ('All','Category','Item')),
+                        match_value TEXT NOT NULL DEFAULT '',
+                        minimum_to_keep INTEGER NOT NULL DEFAULT 0 CHECK(minimum_to_keep>=0),
+                        UNIQUE(role_id,match_kind,match_value));
+                    CREATE TABLE item_metadata(
+                        item_key TEXT PRIMARY KEY,
+                        canonical_category TEXT,
+                        community_category TEXT,
+                        stackable INTEGER CHECK(stackable IN (0,1)),
+                        stack_limit INTEGER CHECK(stack_limit>0),
+                        trade_state TEXT NOT NULL DEFAULT 'Unknown'
+                            CHECK(trade_state IN ('Unknown','Tradeable','NonTradeable')),
+                        provenance TEXT NOT NULL DEFAULT 'Local',
+                        updated TEXT NOT NULL);
+                    CREATE TABLE item_overrides(
+                        item_key TEXT PRIMARY KEY,
+                        category TEXT,
+                        destination_character TEXT COLLATE NOCASE REFERENCES characters(name) ON DELETE SET NULL,
+                        never_move INTEGER NOT NULL DEFAULT 0 CHECK(never_move IN (0,1)));
+                    CREATE TABLE trade_observations(
+                        id INTEGER PRIMARY KEY,
+                        item_key TEXT NOT NULL,
+                        outcome TEXT NOT NULL CHECK(outcome IN ('Success','ExplicitRejection','Inconclusive')),
+                        evidence_kind TEXT NOT NULL,
+                        observed_at TEXT NOT NULL,
+                        app_version TEXT NOT NULL,
+                        game_client_hash TEXT);
+                    """);
+                Execute("PRAGMA user_version=2");
+                migration.Commit();
+            }
+        }
+        catch{_db.Dispose();throw;}
     }
     private void Execute(string sql,params (string,object?)[] parameters)
     {

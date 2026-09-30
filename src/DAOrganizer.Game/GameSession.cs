@@ -26,6 +26,7 @@ public sealed partial class GameSession:IDisposable
     private DateTimeOffset _bankRequested;
     private long _bankDialogRevision;
     private long _manualItemRevision;
+    private ManualTradeTrace? _manualTradeTrace;
     public BankMenu? LastBankMenu {get;private set;}
     public uint? BankNpcId {get;private set;}
     private readonly Timer _flush;
@@ -57,6 +58,7 @@ public sealed partial class GameSession:IDisposable
         _proxy.AddFilter<ClientMoveMessage>(RewriteManualWalk,"WalkCounter",100);
         _proxy.PacketReceived+=(_,e)=>
         {
+            lock(_gate)_manualTradeTrace?.Add(e.Decrypted,e.Connection.Name);
             if(e.Decrypted is ClientPacket manual)ObserveManualItemInput(manual);
             // Never retain credentials or chat in the work queue.
             if(e.Decrypted is ClientPacket client && client.Command is not (ClientCommand.Merchant or ClientCommand.RequestObjectInfo))return;
@@ -94,6 +96,25 @@ public sealed partial class GameSession:IDisposable
         catch{_proxy.Dispose();throw;}
     }
     public Item[] Inventory(){lock(_gate)return _inventory.Values.OrderBy(x=>x.Slot).ToArray();}
+    public bool CapturingManualTrade{get{lock(_gate)return _manualTradeTrace!=null;}}
+    public void StartManualTradeCapture(string operationId)
+    {
+        lock(_gate)
+        {
+            if(!Ready||Name.Length==0)throw new InvalidOperationException("Wait for a ready, named character before capture.");
+            if(_manualTradeTrace!=null)throw new InvalidOperationException("A manual trade capture is already running.");
+            _manualTradeTrace=new(operationId,Name,ProcessId,_inventory.Values,Gold);
+        }
+    }
+    public ManualTradeResult StopManualTradeCapture()
+    {
+        lock(_gate)
+        {
+            var trace=_manualTradeTrace??throw new InvalidOperationException("No manual trade capture is running.");
+            _manualTradeTrace=null;
+            return trace.Finish(_inventory.Values,Gold);
+        }
+    }
     public Item[] Equipment(){lock(_gate)return _equipment.Values.OrderBy(x=>x.Slot).ToArray();}
     public ServerCreatureEntity[] Mundanes(){lock(_gate)return _creatures.Values.Where(x=>x.CreatureType==CreatureType.Mundane).ToArray();}
     public HashSet<Tile> Occupied(){lock(_gate)return _creatures.Values.Select(x=>new Tile(x.X,x.Y)).ToHashSet();}
@@ -175,7 +196,7 @@ public sealed partial class GameSession:IDisposable
                     _baseline.ControlSeen=true;_baseline.Changed(DateTimeOffset.UtcNow);_dirty=true;
                     break;
                 case ServerAddInventoryMessage item:
-                    if(item.Slot is >=1 and <=59){_inventory[item.Slot]=new(item.Slot,item.Name,item.Quantity,item.Sprite,(byte)item.Color,item.Durability,item.MaxDurability);InventoryChanged();}
+                    if(item.Slot is >=1 and <=59){_inventory[item.Slot]=new(item.Slot,item.Name,item.Quantity,item.Sprite,(byte)item.Color,item.Durability,item.MaxDurability,IsStackable:item.IsStackable);InventoryChanged();}
                     break;
                 case ServerRemoveInventoryMessage item:_inventory.Remove(item.Slot);InventoryChanged();break;
                 case ServerAddEquipMessage item:_equipment[(int)item.Slot]=new((int)item.Slot,item.Name,1,item.Sprite,(byte)item.Color,item.Durability,item.MaxDurability);InventoryChanged();break;
