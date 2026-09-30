@@ -36,7 +36,7 @@ public sealed partial class MainWindow:Window
     private Button? _launchButton;
     public MainWindow(Organizer app)
     {
-        _app=app;Title="DA Organizer — The Celtic Collection";Width=1280;Height=880;MinWidth=980;MinHeight=720;
+        _app=app;Title="DAOrganizer — The Celtic Collection";Width=1280;Height=880;MinWidth=980;MinHeight=720;
         if(app.IsDemo){_allAccounts=true;_location="All items";}
         WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new Grid{ColumnDefinitions=new("220,*"),RowDefinitions=new("*,Auto")};
@@ -44,7 +44,7 @@ public sealed partial class MainWindow:Window
         var brand=new StackPanel{Spacing=12,Margin=new(4,0,4,24)};
         var identity=new Grid{ColumnDefinitions=new("60,*")};identity.Children.Add(new CelticSeal{Width=52,Height=52});
         var wordmark=new StackPanel{Spacing=2,VerticalAlignment=VerticalAlignment.Center};
-        wordmark.Children.Add(new TextBlock{Text="DA Organizer",FontFamily=new("Georgia"),FontSize=18,Foreground=Brush("#F2E8D2")});
+        wordmark.Children.Add(new TextBlock{Text="DAOrganizer",FontFamily=new("Georgia"),FontSize=18,Foreground=Brush("#F2E8D2")});
         wordmark.Children.Add(new TextBlock{Text="THE COLLECTION",FontSize=8,LetterSpacing=1.4,Foreground=Brush("#D6B46A")});Grid.SetColumn(wordmark,1);identity.Children.Add(wordmark);
         brand.Children.Add(identity);brand.Children.Add(new CelticRule{Height=12,Opacity=.7});
         brand.Children.Add(new TextBlock{Text="CHARACTERS",FontSize=9,LetterSpacing=2,Foreground=Brush("#86837B"),Margin=new(8,5,0,0)});DockPanel.SetDock(brand,Dock.Top);sidebar.Children.Add(brand);

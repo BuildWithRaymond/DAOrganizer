@@ -43,7 +43,7 @@ public sealed partial class GameSession
         lock(_gate)
         {
             if(_connection is not {IsConnected:true}||!Online)
-                throw new InvalidOperationException("Character is not connected through DA Organizer.");
+                throw new InvalidOperationException("Character is not connected through DAOrganizer.");
             return new(Name,ProcessId,Ready,MapId,_playerId,Position,_inventory.Values.OrderBy(x=>x.Slot).ToArray(),
                 Gold,ResolveTradeTarget(expectedPartner,now),
                 _store.Get<HashSet<int>>("pins/"+Name.ToLowerInvariant())??[],now);

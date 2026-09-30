@@ -1,6 +1,6 @@
 <div align="center">
 
-# DA Organizer
+# DAOrganizer
 
 **Your Dark Ages collection, brought together.**
 
@@ -16,7 +16,7 @@ Find items across characters, arrange your inventory, and review what stays, ban
 
 </div>
 
-![DA Organizer collection: Celtic gold details, category grids and quantity badges](docs/screenshots/collection-v0.15.0.png)
+![DAOrganizer collection: Celtic gold details, category grids and quantity badges](docs/screenshots/collection-v0.15.0.png)
 
 ## A place for everything
 

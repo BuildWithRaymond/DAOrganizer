@@ -1,6 +1,6 @@
 # Architecture
 
-DA Organizer is a .NET 10 / Avalonia desktop application. Live game integration is Windows-specific.
+DAOrganizer is a .NET 10 / Avalonia desktop application. Live game integration is Windows-specific.
 
 ```mermaid
 flowchart LR

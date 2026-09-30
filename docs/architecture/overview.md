@@ -1,6 +1,6 @@
 # Current architecture and agent boundaries
 
-DA Organizer is a .NET 10 Avalonia Windows desktop app for browsing Dark Ages items across characters and performing reviewed, protocol-confirmed inventory/bank operations. This map describes current code; [the existing architecture note](../ARCHITECTURE.md) and [getting started](../GETTING_STARTED.md) cover behavior and limits. Source wins when documentation and code differ.
+DAOrganizer is a .NET 10 Avalonia Windows desktop app for browsing Dark Ages items across characters and performing reviewed, protocol-confirmed inventory/bank operations. This map describes current code; [the existing architecture note](../ARCHITECTURE.md) and [getting started](../GETTING_STARTED.md) cover behavior and limits. Source wins when documentation and code differ.
 
 ```text
 MainWindow (Avalonia)

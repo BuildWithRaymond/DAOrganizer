@@ -1,6 +1,6 @@
-# Working in DA Organizer
+# Working in DAOrganizer
 
-DA Organizer is a Windows desktop companion for Dark Ages. It shows saved and live inventory, equipment, and bank contents across characters; supports reviewed slot sorting and item maintenance; and can update selected accounts through organizer-launched clients. A separate `--demo` mode uses fictional, in-memory data. Read [the current architecture map](docs/architecture/overview.md), [user setup and limits](docs/GETTING_STARTED.md), and [verification commands](docs/CI.md) before changing a subsystem.
+DAOrganizer is a Windows desktop companion for Dark Ages. It shows saved and live inventory, equipment, and bank contents across characters; supports reviewed slot sorting and item maintenance; and can update selected accounts through organizer-launched clients. A separate `--demo` mode uses fictional, in-memory data. Read [the current architecture map](docs/architecture/overview.md), [user setup and limits](docs/GETTING_STARTED.md), and [verification commands](docs/CI.md) before changing a subsystem.
 
 ## Stack and entry points
 

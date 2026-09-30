@@ -1,6 +1,6 @@
 # Release workflow
 
-DA Organizer releases are portable, self-contained Windows x64 archives. The application profile remains under `%LOCALAPPDATA%\DAOrganizer` (or `DAORGANIZER_DATA_DIR`) and passwords remain in Windows Credential Manager; neither is copied into a release archive.
+DAOrganizer releases are portable, self-contained Windows x64 archives. The application profile remains under `%LOCALAPPDATA%\DAOrganizer` (or `DAORGANIZER_DATA_DIR`) and passwords remain in Windows Credential Manager; neither is copied into a release archive.
 
 ## Version and channels
 
@@ -51,6 +51,6 @@ Verify candidate locally with `dotnet run --project tools/DAOrganizer.Release -c
 
 ## Rollback and recovery
 
-An extracted portable app can be rolled back by closing DA Organizer, retaining the newer extracted directory, and launching a previously retained release from a separate directory. Do not overwrite a working extraction in place. Profiles and credentials are external to either directory, so replacing binaries does not intentionally delete them.
+An extracted portable app can be rolled back by closing DAOrganizer, retaining the newer extracted directory, and launching a previously retained release from a separate directory. Do not overwrite a working extraction in place. Profiles and credentials are external to either directory, so replacing binaries does not intentionally delete them.
 
-Database migrations are a separate limit: a newer app may upgrade the profile, and an older binary may not understand the newer schema. Use the migration backup created beside the profile only after closing all DA Organizer processes, and preserve both the current profile and backup before recovery. Restoring an older database loses changes made after that backup. If no compatible backup exists, return to the newer client rather than forcing a downgrade. A failed release can be marked as a GitHub prerelease or removed from recommendations, but published tags and artifacts should be retained for audit; issue a corrected version instead of silently replacing bytes.
+Database migrations are a separate limit: a newer app may upgrade the profile, and an older binary may not understand the newer schema. Use the migration backup created beside the profile only after closing all DAOrganizer processes, and preserve both the current profile and backup before recovery. Restoring an older database loses changes made after that backup. If no compatible backup exists, return to the newer client rather than forcing a downgrade. A failed release can be marked as a GitHub prerelease or removed from recommendations, but published tags and artifacts should be retained for audit; issue a corrected version instead of silently replacing bytes.

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve DA Organizer. Small, focused changes are easiest to review.
+Thanks for helping improve DAOrganizer. Small, focused changes are easiest to review.
 
 ## Set up
 
