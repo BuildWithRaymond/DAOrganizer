@@ -168,12 +168,18 @@ public class TransferJournalTests
             "Recipient delivery was not proven: Complete two-sided acceptance and final delivery are not proven.",
             DateTimeOffset.UtcNow);
 
+        var nextPlan=ReadyPlan(store);store.SaveOrganizationPlan(nextPlan);
+        store.ApproveOrganizationPlan(nextPlan.Id,DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(()=>store.BeginTransferPreparation(nextPlan.Id,DateTimeOffset.UtcNow));
+
         var corrected=store.RecordVerifiedRecipientDelivery(run.Id,DateTimeOffset.UtcNow);
         Assert.Equal(TransferRunState.NeedsReconciliation,corrected.State);
         Assert.Equal("Bravo",corrected.LastVerifiedHolder);
         Assert.Contains("bank deposit not confirmed",corrected.Reason);
         Assert.Throws<InvalidOperationException>(()=>store.RecordVerifiedRecipientDelivery(run.Id,DateTimeOffset.UtcNow));
         Assert.Throws<InvalidOperationException>(()=>store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow));
+        Assert.Equal(TransferRunState.Preparing,
+            store.BeginTransferPreparation(nextPlan.Id,DateTimeOffset.UtcNow).State);
     }
 
     [Theory]

@@ -15,8 +15,8 @@ public sealed partial class InventoryStore:IDisposable
         {
             using var versionCommand=_db.CreateCommand();versionCommand.CommandText="PRAGMA user_version";
             var version=Convert.ToInt32(versionCommand.ExecuteScalar());
-            if(version>4)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
-            if(version is 1 or 2 or 3&&path!=":memory:")
+            if(version>5)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
+            if((version is 1 or 2 or 3 or 4)&&path!=":memory:")
             {
                 var backup=Path.GetFullPath(path)+$".v{version}.backup";
                 if(!File.Exists(backup))
@@ -158,6 +158,18 @@ public sealed partial class InventoryStore:IDisposable
                         PRIMARY KEY(run_id,ordinal));
                     """);
                 Execute("PRAGMA user_version=4");
+                migration.Commit();
+            }
+            if(version<5)
+            {
+                using var migration=_db.BeginTransaction();
+                Execute("""
+                    DROP INDEX active_transfer_source;
+                    CREATE UNIQUE INDEX active_transfer_source ON transfer_runs(source_character)
+                        WHERE state NOT IN ('Complete','Failed')
+                          AND last_verified_holder=source_character;
+                    """);
+                Execute("PRAGMA user_version=5");
                 migration.Commit();
             }
         }

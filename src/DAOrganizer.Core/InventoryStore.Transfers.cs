@@ -169,7 +169,8 @@ public sealed partial class InventoryStore
     }
 
     // Call only after the saved two-session trace is independently reanalyzed and matches the run's step.
-    // This corrects custody evidence; it neither approves banking nor releases the source reservation.
+    // This corrects custody evidence and releases only the source reservation under schema v5.
+    // Destination banking remains unconfirmed and the original step cannot be replayed.
     public TransferRun RecordVerifiedRecipientDelivery(Guid id,DateTimeOffset now)
     {
         lock(_gate)

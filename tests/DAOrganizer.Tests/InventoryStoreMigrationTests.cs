@@ -63,7 +63,7 @@ public class InventoryStoreMigrationTests
             using(var db=new SqliteConnection($"Data Source={path}"))
             {
                 db.Open();using var query=db.CreateCommand();query.CommandText="PRAGMA user_version";
-                Assert.Equal(4L,(long)query.ExecuteScalar()!);
+                Assert.Equal(5L,(long)query.ExecuteScalar()!);
             }
         }
         finally
@@ -136,6 +136,46 @@ public class InventoryStoreMigrationTests
         {
             SqliteConnection.ClearAllPools();
             foreach(var suffix in new[]{"","-wal","-shm",".v3.backup"})File.Delete(path+suffix);
+        }
+    }
+
+    [Fact]
+    public void VersionFourProfileBacksUpBeforeSourceReservationUpgrade()
+    {
+        var path=Path.Combine(Path.GetTempPath(),"DAOrganizer-migration-"+Guid.NewGuid()+".db");
+        try
+        {
+            using(var store=new InventoryStore(path))store.SaveSnapshot("Alpha","Bank",[new Item(1,"Chest",2)],true);
+            using(var old=new SqliteConnection($"Data Source={path}"))
+            {
+                old.Open();using var command=old.CreateCommand();
+                command.CommandText="""
+                    DROP INDEX active_transfer_source;
+                    CREATE UNIQUE INDEX active_transfer_source ON transfer_runs(source_character)
+                        WHERE state NOT IN ('Complete','Failed');
+                    PRAGMA user_version=4;
+                    """;
+                command.ExecuteNonQuery();
+            }
+            using(var upgraded=new InventoryStore(path))
+                Assert.Equal(2,Assert.Single(upgraded.Items("Alpha","Bank")).Quantity);
+            using(var db=new SqliteConnection($"Data Source={path}"))
+            {
+                db.Open();using var query=db.CreateCommand();query.CommandText="PRAGMA user_version";
+                Assert.Equal(5L,(long)query.ExecuteScalar()!);
+                query.CommandText="SELECT sql FROM sqlite_master WHERE type='index' AND name='active_transfer_source'";
+                Assert.Contains("last_verified_holder=source_character",(string)query.ExecuteScalar()!);
+            }
+            using(var backup=new SqliteConnection($"Data Source={path}.v4.backup"))
+            {
+                backup.Open();using var query=backup.CreateCommand();query.CommandText="PRAGMA user_version";
+                Assert.Equal(4L,(long)query.ExecuteScalar()!);
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach(var suffix in new[]{"","-wal","-shm",".v4.backup"})File.Delete(path+suffix);
         }
     }
 
