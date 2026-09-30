@@ -213,6 +213,66 @@ public class TransferJournalTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void DeliveredUnitCanFinishBankingOnceWithoutRepeatingExchange(bool sourceSnapshotMatches)
+    {
+        using var store=new InventoryStore(":memory:");
+        store.SaveSnapshot("Alpha","Bank",[Chest],true);
+        store.SaveSnapshot("Bravo","Bank",[],true);
+        var original=ReadyPlan(store);var step=original.Steps[0];
+        var plan=original with{Steps=[step with{Quantity=1,ExpectedAfter=
+            [step.ExpectedAfter[0] with{Quantity=1},step.ExpectedAfter[1] with{Quantity=1}]}]};
+        store.SaveOrganizationPlan(plan);store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+        var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
+        foreach(var (from,to) in new[]{
+            (TransferRunState.Preparing,TransferRunState.InSourceInventory),
+            (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen),
+            (TransferRunState.ExchangeOpen,TransferRunState.Offered),
+            (TransferRunState.Offered,TransferRunState.Accepting),
+            (TransferRunState.Accepting,TransferRunState.RecipientVerified),
+            (TransferRunState.RecipientVerified,TransferRunState.Banking)})
+            store.AdvanceTransferRun(run.Id,from,to,"Synthetic stage",DateTimeOffset.UtcNow);
+        store.MarkTransferNeedsReconciliation(run.Id,
+            "Approach and scan the same nearby banker before an approved deposit.",DateTimeOffset.UtcNow);
+        Assert.Equal(TransferRunState.Banking,store.BeginRecoveredDeposit(run.Id,DateTimeOffset.UtcNow).State);
+        Assert.Throws<InvalidOperationException>(()=>store.BeginRecoveredDeposit(run.Id,DateTimeOffset.UtcNow));
+        Assert.Throws<InvalidOperationException>(()=>store.CompleteRecoveredDeposit(run.Id,DateTimeOffset.UtcNow));
+        store.SaveSnapshot("Alpha","Bank",sourceSnapshotMatches?[Chest with{Quantity=1}]:[],true);
+        store.SaveSnapshot("Bravo","Bank",[Chest with{Quantity=1}],true);
+        store.SaveSnapshot("Bravo","Inventory",[],true);
+        Assert.Equal(TransferRunState.Complete,store.CompleteRecoveredDeposit(run.Id,DateTimeOffset.UtcNow).State);
+        Assert.Equal(PlanApprovalState.Completed,store.LoadOrganizationPlan(plan.Id)!.Approval);
+        Assert.Throws<InvalidOperationException>(()=>store.BeginRecoveredDeposit(run.Id,DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public void FailedRecoveryDepositCannotRequestAnotherAttempt()
+    {
+        using var store=new InventoryStore(":memory:");
+        store.SaveSnapshot("Alpha","Bank",[Chest],true);
+        store.SaveSnapshot("Bravo","Bank",[],true);
+        var original=ReadyPlan(store);var step=original.Steps[0];
+        var plan=original with{Steps=[step with{Quantity=1,ExpectedAfter=
+            [step.ExpectedAfter[0] with{Quantity=1},step.ExpectedAfter[1] with{Quantity=1}]}]};
+        store.SaveOrganizationPlan(plan);store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+        var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
+        foreach(var (from,to) in new[]{
+            (TransferRunState.Preparing,TransferRunState.InSourceInventory),
+            (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen),
+            (TransferRunState.ExchangeOpen,TransferRunState.Offered),
+            (TransferRunState.Offered,TransferRunState.Accepting),
+            (TransferRunState.Accepting,TransferRunState.RecipientVerified),
+            (TransferRunState.RecipientVerified,TransferRunState.Banking)})
+            store.AdvanceTransferRun(run.Id,from,to,"Synthetic stage",DateTimeOffset.UtcNow);
+        const string oldGate="Approach and scan the same nearby banker before an approved deposit.";
+        store.MarkTransferNeedsReconciliation(run.Id,oldGate,DateTimeOffset.UtcNow);
+        store.BeginRecoveredDeposit(run.Id,DateTimeOffset.UtcNow);
+        store.MarkTransferNeedsReconciliation(run.Id,oldGate,DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(()=>store.BeginRecoveredDeposit(run.Id,DateTimeOffset.UtcNow));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void ReopeningProfileUsesOnlyValidTwoSessionCaptureToCorrectLastHolder(bool malformed)
     {
         var directory=Path.Combine(Path.GetTempPath(),"da-transfer-recovery-"+Guid.NewGuid().ToString("N"));

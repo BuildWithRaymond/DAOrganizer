@@ -245,6 +245,102 @@ public sealed partial class InventoryStore
         }
     }
 
+    private const string RecoveryDepositIntent="Recovery deposit intent persisted before send";
+
+    // Only the historical pre-send proximity gate is retryable. Once this intent is durable,
+    // a crash or uncertain reply cannot cause a second deposit attempt.
+    public TransferRun BeginRecoveredDeposit(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                var saved=LoadOrganizationPlanCore(run.PlanId)??throw new InvalidDataException("Transfer plan is missing.");
+                var step=saved.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+                using var events=_db.CreateCommand();
+                events.CommandText="SELECT state,detail FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 2";
+                events.Parameters.AddWithValue("$id",id.ToString("D"));
+                using var reader=events.ExecuteReader();var latest=new List<(string State,string Detail)>();
+                while(reader.Read())latest.Add((reader.GetString(0),reader.GetString(1)));
+                reader.Close();
+                using var prior=_db.CreateCommand();
+                prior.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id AND detail=$detail";
+                prior.Parameters.AddWithValue("$id",id.ToString("D"));
+                prior.Parameters.AddWithValue("$detail",RecoveryDepositIntent);
+                if(run.State!=TransferRunState.NeedsReconciliation||run.Quantity!=1||
+                    run.Reason!="Approach and scan the same nearby banker before an approved deposit."||
+                    !string.Equals(run.LastVerifiedHolder,run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)||
+                    latest.Count!=2||latest[0].State!="NeedsReconciliation"||latest[1].State!="Banking"||
+                    Convert.ToInt32(prior.ExecuteScalar())!=0||now<run.UpdatedAt||
+                    saved.Approval!=PlanApprovalState.Approved||step is null||
+                    step.RouteKind!=TransferRouteKind.Direct||step.Quantity!=1||
+                    !step.SourceCharacter.Equals(run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+                    !step.DestinationCharacter.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Only a delivered unit stopped before its first deposit can resume banking.");
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("UPDATE transfer_runs SET state='Banking',reason=$detail,updated_at=$at WHERE id=$id",
+                    ("$detail",RecoveryDepositIntent),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'Banking',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$detail",RecoveryDepositIntent));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    // Called only after the recipient's live inventory decrease and fresh bank gain are checked.
+    public TransferRun CompleteRecoveredDeposit(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                var saved=LoadOrganizationPlanCore(run.PlanId)??throw new InvalidDataException("Transfer plan is missing.");
+                var step=saved.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+                using var last=_db.CreateCommand();
+                last.CommandText="SELECT detail FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 1";
+                last.Parameters.AddWithValue("$id",id.ToString("D"));
+                var state=ReadOrganizationStateWithinTransaction();
+                var destinationAfter=step?.ExpectedAfter.SingleOrDefault(x=>
+                    x.Character.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&x.Location=="Bank");
+                if(run.State!=TransferRunState.Banking||run.Reason!=RecoveryDepositIntent||
+                    !string.Equals(run.LastVerifiedHolder,run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)||
+                    last.ExecuteScalar() as string!=RecoveryDepositIntent||now<run.UpdatedAt||
+                    saved.Approval!=PlanApprovalState.Approved||saved.NextStepOrdinal!=0||
+                    saved.Plan.Steps.Length!=1||step is null||step.Quantity!=1||
+                    destinationAfter is null||!OrganizationPlanContract.Matches(state,[destinationAfter])||
+                    state.Characters.SingleOrDefault(x=>x.Name.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))
+                        is not {BankState:"Current",InventoryState:"Current"}||
+                    state.Items.Any(x=>x.Character.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&
+                        x.Location=="Inventory"&&ItemGroups.Key(x.Item)==step.ItemKey))
+                    throw new InvalidOperationException("Recipient inventory and destination bank do not prove the recovered deposit.");
+                Execute("UPDATE organization_plans SET approval='Completed',next_step_ordinal=1,checkpoint_fingerprint=$fingerprint,checkpoint_state=$state WHERE id=$id",
+                    ("$fingerprint",state.Fingerprint),("$state",System.Text.Json.JsonSerializer.Serialize(state)),
+                    ("$id",run.PlanId.ToString("D")));
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                const string detail="Recovered recipient deposit confirmed by fresh inventory and bank snapshots";
+                Execute("UPDATE transfer_runs SET state='Complete',reason=$detail,updated_at=$at WHERE id=$id",
+                    ("$detail",detail),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'Complete',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$detail",detail));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
     public TransferRun AdvanceTransferRun(Guid id,TransferRunState expected,TransferRunState next,
         string detail,DateTimeOffset now)
     {

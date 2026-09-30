@@ -203,7 +203,29 @@ public sealed partial class MainWindow
                 var runs=_app.Store.ListTransferRuns(10);
                 if(runs.Count>0)body.Children.Add(Text("Transfer recovery",17));
                 foreach(var run in runs)
+                {
                     body.Children.Add(Text($"{run.State}: {run.Quantity} from {run.SourceCharacter} to {run.DestinationCharacter}. Last verified holder: {run.LastVerifiedHolder}. {run.Reason}",12,true));
+                    if(run.State==TransferRunState.NeedsReconciliation&&run.Quantity==1&&
+                       run.Reason=="Approach and scan the same nearby banker before an approved deposit."&&
+                       run.LastVerifiedHolder.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))
+                    {
+                        var pending=run;
+                        var step=_app.Store.LoadOrganizationPlan(run.PlanId)?.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+                        var finish=Button($"Deposit {step?.SourceItem.Name??"delivered unit"} on {run.DestinationCharacter}",async() =>
+                        {
+                            try
+                            {
+                                status.Text="Checking delivered unit and destination bank. Keep recipient client open.";
+                                await _app.RunOperation(t=>_app.FinishDeliveredTransferBanking(pending.Id,t));
+                                status.Text="Destination bank deposit confirmed.";
+                            }
+                            catch(Exception ex){status.Text="Deposit stopped: "+ex.Message+" Review recovery below.";}
+                            Render();
+                        });
+                        finish.IsEnabled=!_app.Busy&&_app.Session(run.DestinationCharacter)?.Ready==true;
+                        body.Children.Add(finish);
+                    }
+                }
             }
             if(plan.Groups.Count==0)body.Children.Add(Text("No duplicate bank groups found in saved scans.",13,true));
             foreach(var group in plan.Groups)

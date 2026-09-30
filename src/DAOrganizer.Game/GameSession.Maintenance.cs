@@ -122,17 +122,15 @@ public sealed partial class GameSession:IItemMaintenanceClient
             lock(_gate)
             {
                 token.ThrowIfCancellationRequested();guard();CheckItem(item,quantity);
-                var npc=HaxBankNpc();
-                var banker=Mundanes().SingleOrDefault(x=>x.Id==npc);
-                if(BankNpcId!=npc||LastBankScan is null||banker is null||
-                    Math.Abs(banker.X-Position.X)+Math.Abs(banker.Y-Position.Y)>1)
-                    throw new InvalidOperationException("Approach and scan the same nearby banker before an approved deposit.");
+                var npc=BankNpcId;
+                if(npc is null or 0||LastBankScan is null||!Mundanes().Any(x=>x.Id==npc))
+                    throw new InvalidOperationException("Scan a visible NPC before an approved deposit.");
                 SetStatus($"Banking approved transfer: {quantity:N0} {item.Name}");_store.MarkStale(Name,"Bank");
                 Send(item.Quantity==1
-                    ?new ClientMerchantMessage{EntityType=EntityTypeFlags.Creature,EntityId=npc,PursuitId=0x53,Slot=(byte)item.Slot}
-                    :new ClientMerchantMessage{EntityType=EntityTypeFlags.Creature,EntityId=npc,PursuitId=0x54,
+                    ?new ClientMerchantMessage{EntityType=EntityTypeFlags.Creature,EntityId=npc.Value,PursuitId=0x53,Slot=(byte)item.Slot}
+                    :new ClientMerchantMessage{EntityType=EntityTypeFlags.Creature,EntityId=npc.Value,PursuitId=0x54,
                         QuantitySlot=(byte)item.Slot,Arguments=[quantity.ToString(CultureInfo.InvariantCulture)]});
-                CloseBankPopup(npc);
+                CloseBankPopup(npc.Value);
             }
             return await ConfirmBankChange(()=>Decreased(item,quantity),sent,token,guard);
         }

@@ -79,6 +79,55 @@ public sealed partial class Organizer
         }
     }
 
+    public async Task FinishDeliveredTransferBanking(Guid runId,CancellationToken token)
+    {
+        RequireLiveProfile();
+        if(ManualTradeCaptureRunning)throw new InvalidOperationException("Stop the manual trade capture first.");
+        var run=Store.LoadTransferRun(runId)??throw new KeyNotFoundException("Transfer run not found.");
+        if(run.State!=TransferRunState.NeedsReconciliation||run.Quantity!=1||
+            run.Reason!="Approach and scan the same nearby banker before an approved deposit."||
+            !run.LastVerifiedHolder.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("This transfer cannot resume a deposit safely.");
+        var step=Store.LoadOrganizationPlan(run.PlanId)?.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId)
+            ??throw new InvalidDataException("Transfer step is missing.");
+        if(step.RouteKind!=TransferRouteKind.Direct||step.Quantity!=run.Quantity)
+            throw new InvalidOperationException("Only the delivered direct unit can finish banking.");
+        var recipient=Session(run.DestinationCharacter)??throw new InvalidOperationException("Recipient session is offline.");
+        await TravelToBank(recipient,token);
+        var state=Store.ReadOrganizationState();
+        var bankBefore=step.ExpectedBefore.Single(x=>x.Character.Equals(run.DestinationCharacter,
+            StringComparison.OrdinalIgnoreCase)&&x.Location=="Bank");
+        if(!OrganizationPlanContract.Matches(state,[bankBefore]))
+            throw new InvalidOperationException("Destination bank changed since this delivered unit; review recovery before depositing.");
+        var beforeInventory=recipient.Inventory();
+        var received=beforeInventory.Where(x=>ItemGroups.Key(x)==step.ItemKey&&
+            OrganizationPlanContract.MatchesObservedItem(x,step.SourceItem)).ToArray();
+        if(received.Length!=1||received[0].Quantity!=run.Quantity||
+            beforeInventory.Count(x=>ItemGroups.Key(x)==step.ItemKey)!=1)
+            throw new InvalidOperationException("Delivered unit is not uniquely present in recipient inventory.");
+        var item=received[0];
+        var beforeBank=recipient.BankItems().Where(x=>ItemGroups.Key(x)==step.ItemKey).Sum(x=>x.Quantity);
+        Store.BeginRecoveredDeposit(run.Id,DateTimeOffset.UtcNow);
+        try
+        {
+            if(!await recipient.DepositApprovedTransfer(item,run.Quantity,token))
+                throw new InvalidOperationException("Recovered bank deposit did not confirm inventory decrease; no retry sent.");
+            await recipient.ScanNearbyBank(null,token);
+            var afterInventory=recipient.Inventory();
+            var afterBank=recipient.BankItems().Where(x=>ItemGroups.Key(x)==step.ItemKey).Sum(x=>x.Quantity);
+            if(afterInventory.Any(x=>ItemGroups.Key(x)==step.ItemKey)||
+                !beforeInventory.Where(x=>x.Slot!=item.Slot).SequenceEqual(afterInventory)||
+                afterBank!=beforeBank+run.Quantity)
+                throw new InvalidOperationException("Recovered deposit inventory and bank gain did not match; no retry sent.");
+            Store.CompleteRecoveredDeposit(run.Id,DateTimeOffset.UtcNow);
+        }
+        catch(Exception ex)
+        {
+            Store.MarkTransferNeedsReconciliation(run.Id,ShortReason(ex),DateTimeOffset.UtcNow);
+            throw;
+        }
+    }
+
     public async Task ExecuteOneUnitDirectTrial(PlannedOrganizationStep selected,CancellationToken token)
     {
         RequireLiveProfile();

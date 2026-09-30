@@ -191,6 +191,29 @@ public class MaintenanceSessionTests
             game.Sent.Select(x=>x.Command));
     }
     [Fact]
+    public async Task ApprovedDepositUsesTheScannedVisibleNpcWithoutAdjacency()
+    {
+        using var game=new Replay();game.Npc(x:15);game.Add(5,1);game.Set("_ready",true);
+        game.OnSent=packet=>
+        {
+            if(packet.Command!=ClientCommand.Merchant)return;
+            var request=(ClientMerchantMessage)ClientMessageFactory.Default.Create(packet)!;
+            Assert.Equal(42u,request.EntityId);
+            if(request.PursuitId==0x45)
+                game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,
+                    MenuType=DialogMenuType.ItemChoices,PursuitId=86,
+                    ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+            else
+            {
+                Assert.Equal((ushort)0x53,request.PursuitId);
+                game.Receive(ServerCommand.RemoveInventory,new ServerRemoveInventoryMessage{Slot=5});
+            }
+        };
+        await game.Session.ScanNearbyBank(null,default);
+        Assert.True(await game.Session.DepositApprovedTransfer(Assert.Single(game.Session.Inventory()),1,default));
+        Assert.Empty(game.Session.Inventory());
+    }
+    [Fact]
     public async Task AccountBankRefreshAtInnNeedsNoWorldLogsOrWalking()
     {
         using var game=new Replay();game.Npc("Innkeeper");game.Set("_ready",true);
