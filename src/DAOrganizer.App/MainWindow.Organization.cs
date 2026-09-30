@@ -66,14 +66,68 @@ public sealed partial class MainWindow
             if(exact is null)body.Children.Add(Text("No exact steps from current saved scans and holder choices.",12,true));
             else
             {
-                body.Children.Add(Text($"{exact.Steps.Length} candidates. Draft expires {exact.ExpiresAt.LocalDateTime:g}. Select steps to save a review draft.",12,true));
+                body.Children.Add(Text($"{exact.Steps.Length} candidates. Draft expires {exact.ExpiresAt.LocalDateTime:g}. Use the Direct route selector for a transfer test; the checkboxes below save review drafts.",12,true));
                 var selected=new List<(Guid Id,CheckBox Box)>();
+                var candidateRows=new StackPanel{Spacing=10};
                 foreach(var step in exact.Steps)
                 {
                     var row=new CheckBox{Content=$"{step.SourceCharacter} {step.SourceLocation} slot {step.SourceSlot}: {step.Quantity} {step.SourceItem.Name} → {step.DestinationCharacter} Bank | {step.RouteKind} | {step.Readiness}",
-                        IsChecked=step.Readiness!=OrganizationReadiness.ManualOnly};
-                    selected.Add((step.Id,row));body.Children.Add(row);
+                        IsChecked=_app.IsDemo&&step.Readiness!=OrganizationReadiness.ManualOnly};
+                    selected.Add((step.Id,row));candidateRows.Children.Add(row);
                 }
+                if(!_app.IsDemo)
+                {
+                    var direct=exact.Steps.Where(x=>x.RouteKind==TransferRouteKind.Direct).ToArray();
+                    body.Children.Add(Text($"Direct transfer test: {direct.Length} available routes",17));
+                    if(direct.Length==0)
+                    {
+                        body.Children.Add(Text("No Direct route yet. Assign the two characters to separate game accounts and set their coexistence to Yes.",12,true));
+                        body.Children.Add(Button("Configure account coexistence",async()=>
+                        {
+                            await StorageSetup(window);
+                            Render();
+                        }));
+                    }
+                    else
+                    {
+                        body.Children.Add(Text("Choose one route here. The controlled trial moves one unit.",12,true));
+                        var labels=direct.Select(x=>$"{x.SourceCharacter} {x.SourceLocation} slot {x.SourceSlot}: {x.SourceItem.Name} → {x.DestinationCharacter} Bank").ToArray();
+                        var choice=new ComboBox{ItemsSource=labels,SelectedIndex=-1,Width=680,PlaceholderText="Choose one Direct route"};
+                        body.Children.Add(choice);
+                    Task Prepare(bool trial)
+                    {
+                        try
+                        {
+                            if(choice.SelectedIndex<0||choice.SelectedIndex>=direct.Length)
+                                throw new InvalidOperationException("Choose one Direct route from the list above.");
+                            var step=direct[choice.SelectedIndex];
+                            var chosen=trial?OrganizationPlanSelection.SelectOneUnit(exact,state,step.Id):
+                                OrganizationPlanSelection.Select(exact,state,[step.Id]);
+                            var sender=_app.Session(step.SourceCharacter)??throw new InvalidOperationException("Source is offline. Connect both organizer-launched clients first.");
+                            var recipient=_app.Session(step.DestinationCharacter)??throw new InvalidOperationException("Recipient is offline. Connect both organizer-launched clients first.");
+                            var now=DateTimeOffset.UtcNow;
+                            var ready=DirectPlanReadiness.Promote(chosen,state,
+                                sender.CaptureTradeEndpoint(recipient.Name,now),
+                                recipient.CaptureTradeEndpoint(sender.Name,now),now,trial);
+                            if(_app.Store.ReadOrganizationState().Fingerprint!=state.Fingerprint)
+                                throw new StaleOrganizationPlanException("Saved state changed. Reopen organization review.");
+                            ready=ready with{Id=Guid.NewGuid()};
+                            _app.Store.SaveOrganizationPlan(ready);
+                            status.Text=trial?
+                                "One-unit controlled trial saved. It may stop with the item on either character. Review, then Approve.":
+                                "Ready draft saved. Review the exact step below, then Approve.";
+                            Render();
+                        }
+                        catch(Exception ex){status.Text=ex.Message;}
+                        return Task.CompletedTask;
+                    }
+                        var controls=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
+                        controls.Children.Add(Button("Prepare one-unit controlled trial",()=>Prepare(true)));
+                        controls.Children.Add(Button("Prepare selected direct step",()=>Prepare(false)));
+                        body.Children.Add(controls);
+                    }
+                }
+                body.Children.Add(Text("Review candidates",17));
                 if(!_app.IsDemo)
                     body.Children.Add(Button("Save selected review draft",()=>
                     {
@@ -93,37 +147,7 @@ public sealed partial class MainWindow
                         catch(Exception ex){status.Text=ex.Message;}
                         return Task.CompletedTask;
                     }));
-                if(!_app.IsDemo)
-                {
-                    Task Prepare(bool trial)
-                    {
-                        try
-                        {
-                            var ids=selected.Where(x=>x.Box.IsChecked==true).Select(x=>x.Id).ToArray();
-                            var chosen=OrganizationPlanSelection.Select(exact,state,ids);
-                            if(chosen.Steps.Length!=1)throw new InvalidOperationException("Select exactly one direct step.");
-                            var step=chosen.Steps[0];
-                            var sender=_app.Session(step.SourceCharacter)??throw new InvalidOperationException("Source is offline.");
-                            var recipient=_app.Session(step.DestinationCharacter)??throw new InvalidOperationException("Recipient is offline.");
-                            var now=DateTimeOffset.UtcNow;
-                            var ready=DirectPlanReadiness.Promote(chosen,state,
-                                sender.CaptureTradeEndpoint(recipient.Name,now),
-                                recipient.CaptureTradeEndpoint(sender.Name,now),now,trial);
-                            if(_app.Store.ReadOrganizationState().Fingerprint!=state.Fingerprint)
-                                throw new StaleOrganizationPlanException("Saved state changed. Reopen organization review.");
-                            ready=ready with{Id=Guid.NewGuid()};
-                            _app.Store.SaveOrganizationPlan(ready);
-                            status.Text=trial?
-                                "One-unit controlled trial saved. It may stop with the item on either character. Review, then Approve.":
-                                "Ready draft saved. Review the exact step below, then Approve.";
-                            Render();
-                        }
-                        catch(Exception ex){status.Text=ex.Message;}
-                        return Task.CompletedTask;
-                    }
-                    body.Children.Add(Button("Prepare selected direct step",()=>Prepare(false)));
-                    body.Children.Add(Button("Prepare one-unit controlled trial",()=>Prepare(true)));
-                }
+                body.Children.Add(new ScrollViewer{Content=candidateRows,MaxHeight=220});
                 body.Children.Add(Text("For a ready direct step: both clients must be adjacent and mutually visible; an inventory source is exact, or a bank source can withdraw one uniquely named unit; destination bank has a scanned matching stack with known room; trade evidence is positive. Select one step, prepare, then approve.",11,true));
                 body.Children.Add(Text("Controlled trial permits one low-value unit before tradeability or bank capacity is known. If exchange or deposit is refused, recovery shows the last verified holder. No automatic retry is sent.",11,true));
             }

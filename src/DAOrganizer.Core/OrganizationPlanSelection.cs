@@ -6,6 +6,24 @@ namespace DAOrganizer.Core;
 
 public static class OrganizationPlanSelection
 {
+    public static ExactOrganizationPlan SelectOneUnit(ExactOrganizationPlan original,OrganizationState state,Guid stepId)
+    {
+        var selected=Select(original,state,[stepId]);
+        var step=selected.Steps[0];
+        if(step.Quantity==1)return selected;
+        var source=step.ExpectedBefore.Single(x=>x.Character.Equals(step.SourceCharacter,StringComparison.OrdinalIgnoreCase)&&
+            x.Location==step.SourceLocation&&x.Slot==step.SourceSlot);
+        var destination=step.ExpectedBefore.Single(x=>x.Character.Equals(step.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&
+            x.Location=="Bank"&&x.Slot is null);
+        var unit=step with{Quantity=1,ExpectedAfter=[source with{Quantity=source.Quantity-1},
+            destination with{Quantity=destination.Quantity+1}]};
+        var seed=$"one-unit|{selected.Id:D}";
+        var id=new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(seed)).AsSpan(0,16));
+        var result=selected with{Id=id,Steps=[unit]};
+        OrganizationPlanContract.Validate(result);
+        return result;
+    }
+
     public static ExactOrganizationPlan Select(ExactOrganizationPlan original,OrganizationState state,
         IReadOnlyCollection<Guid> selectedStepIds)
     {

@@ -140,6 +140,17 @@ app.Store.SaveSnapshot("Example","Bank",app.Store.Items("Example","Bank").Append
 app.Store.SaveSnapshot("Storage","Bank",[new Item(1,"Water Dungeon Chest",1,15,IsStackable:true)],true);
 var storageRole=app.Accounts.AddStorageRole("Storage","Chests");
 app.Accounts.AddStorageRule(storageRole.Id,StorageMatchKind.Item,ItemGroups.Key(new Item(1,"Water Dungeon Chest",1,15)));
+Click("Organization plan");
+var noDirect=window.OwnedWindows.Single(x=>x.Title=="Organization plan");
+Capture("organization-no-direct",noDirect);
+if(!noDirect.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Configure account coexistence"))
+    throw new Exception("Missing direct-route setup action.");
+noDirect.Close();
+var sourceAccount=app.Accounts.CreateGameAccount("UI source");
+var destinationAccount=app.Accounts.CreateGameAccount("UI destination");
+app.Accounts.AssignCharacter("Example",sourceAccount.Id);
+app.Accounts.AssignCharacter("Storage",destinationAccount.Id);
+app.Accounts.SetPairCoexistence(sourceAccount.Id,destinationAccount.Id,CoexistencePolicy.Yes);
 Click("Account manager");
 var manager=window.OwnedWindows.Single(x=>x.Title=="Account manager");Capture("account-manager",manager);
 manager.GetVisualDescendants().OfType<Button>().First(x=>x.Content as string=="Game accounts & storage")
@@ -149,8 +160,16 @@ storage.GetVisualDescendants().OfType<ComboBox>().First().SelectedItem="Storage"
 Capture("storage-setup",storage);storage.Close();manager.Close();
 Click("Organization plan");
 var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);
+var trialButton=organization.GetVisualDescendants().OfType<Button>()
+    .Single(x=>x.Content as string=="Prepare one-unit controlled trial");
+var firstCandidate=organization.GetVisualDescendants().OfType<CheckBox>()
+    .First(x=>(x.Content as string)?.Contains("slot",StringComparison.Ordinal)==true);
+if(trialButton.TranslatePoint(default,organization)?.Y is not double actionY||
+    firstCandidate.TranslatePoint(default,organization)?.Y is not double candidateY||actionY>=candidateY)
+    throw new Exception("Direct transfer action must be visible above the long candidate list.");
 var saveDraft=organization.GetVisualDescendants().OfType<Button>()
     .Single(x=>x.Content as string=="Save selected review draft");
+firstCandidate.IsChecked=true;
 saveDraft.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
 var saved=app.Store.ListOrganizationPlans();
 if(saved.Count!=1||saved[0].Plan.Steps.Length!=1||saved[0].Approval!=PlanApprovalState.Draft)

@@ -72,4 +72,24 @@ public class OrganizationPlanSelectionTests
         Assert.Throws<ArgumentException>(()=>OrganizationPlanSelection.Select(plan,state,[]));
         Assert.Throws<ArgumentException>(()=>OrganizationPlanSelection.Select(plan,state,[Guid.NewGuid()]));
     }
+
+    [Fact]
+    public void OneUnitTrialRebasesAStackCandidateToOneUnit()
+    {
+        using var store=new InventoryStore(":memory:");
+        var item=new Item(1,"Chest",3,15,IsStackable:true);
+        store.SaveSnapshot("Alpha","Bank",[item],true);
+        store.SaveSnapshot("Bravo","Bank",[item with{Quantity=1}],true);
+        store.SetItemOverride(item,new ItemOverride(null,"Bravo",false));
+        var state=store.ReadOrganizationState();var now=DateTimeOffset.UtcNow;
+        var original=OrganizationPlanner.BuildExact(state,now,now.AddMinutes(30))!;
+        var selected=OrganizationPlanSelection.SelectOneUnit(original,state,original.Steps[0].Id);
+        var step=Assert.Single(selected.Steps);
+        Assert.Equal(1,step.Quantity);
+        Assert.Equal(3,step.ExpectedBefore[0].Quantity);
+        Assert.Equal(2,step.ExpectedAfter[0].Quantity);
+        Assert.Equal(1,step.ExpectedBefore[1].Quantity);
+        Assert.Equal(2,step.ExpectedAfter[1].Quantity);
+        OrganizationPlanContract.Validate(selected);
+    }
 }
