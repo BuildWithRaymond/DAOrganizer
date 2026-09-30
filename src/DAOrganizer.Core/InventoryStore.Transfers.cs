@@ -14,9 +14,9 @@ public sealed record TransferRun(Guid Id,Guid PlanId,Guid StepId,string SourceCh
 
 public sealed partial class InventoryStore
 {
-    // Earlier builds journaled this pre-send age check as uncertain custody. Its exception
-    // is thrown before the withdrawal packet, so this exact two-event case is safe to release.
-    public int ResolveKnownNoSendBankAgeFailures(DateTimeOffset now)
+    // Earlier builds journaled these exact pre-send withdrawal checks as uncertain custody.
+    // Both exceptions precede the item packet, so only the two-event Preparing case is released.
+    public int ResolveKnownNoSendWithdrawalFailures(DateTimeOffset now)
     {
         lock(_gate)
         {
@@ -27,7 +27,8 @@ public sealed partial class InventoryStore
                 find.CommandText="""
                     SELECT r.id FROM transfer_runs r
                     WHERE r.state='NeedsReconciliation'
-                      AND r.reason='Source bank scan is too old for an approved withdrawal.'
+                      AND r.reason IN ('Source bank scan is too old for an approved withdrawal.',
+                                       'Approach and scan the same nearby banker before withdrawal.')
                       AND r.last_verified_holder=r.source_character
                       AND (SELECT count(*) FROM transfer_events e WHERE e.run_id=r.id)=2
                       AND EXISTS(SELECT 1 FROM transfer_events e WHERE e.run_id=r.id AND e.ordinal=0 AND e.state='Preparing')
@@ -38,9 +39,9 @@ public sealed partial class InventoryStore
                 reader.Close();
                 foreach(var id in ids)
                 {
-                    Execute("UPDATE transfer_runs SET state='Failed',reason='Pre-send bank age gate; no withdrawal packet sent',updated_at=$at WHERE id=$id",
+                    Execute("UPDATE transfer_runs SET state='Failed',reason='Pre-send withdrawal gate; no withdrawal packet sent',updated_at=$at WHERE id=$id",
                         ("$at",now.ToString("O")),("$id",id));
-                    Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,2,'Failed',$at,'Known pre-send bank age gate; source reservation released')",
+                    Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,2,'Failed',$at,'Known pre-send withdrawal gate; source reservation released')",
                         ("$id",id),("$at",now.ToString("O")));
                 }
                 Execute("COMMIT");

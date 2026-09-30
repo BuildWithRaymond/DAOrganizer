@@ -30,6 +30,18 @@ public class DirectTradePreflightTests
     }
 
     [Fact]
+    public void BankSourceMayGainPreviouslyUnknownDurabilityAndStackability()
+    {
+        var (sender,recipient,step)=Ready();
+        var bankItem=Chest with{Slot=9,Durability=null,MaxDurability=null,IsStackable=null};
+        var carried=Chest with{Durability=0,MaxDurability=0};
+        sender=sender with{Inventory=[carried]};
+        step=step with{SourceLocation="Bank",SourceSlot=9,SourceItem=bankItem};
+        Assert.Equal(202u,DirectTradePreflight.Check(sender,recipient,step,carried,DateTimeOffset.UtcNow).SenderTargetId);
+        Assert.False(OrganizationPlanContract.MatchesObservedItem(carried with{Sprite=99},bankItem));
+    }
+
+    [Fact]
     public void StationaryVisiblePartnersRemainValidAfterThreeMinutes()
     {
         var (sender,recipient,step)=Ready();

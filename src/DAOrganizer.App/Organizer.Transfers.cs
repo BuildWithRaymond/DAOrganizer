@@ -140,7 +140,7 @@ public sealed partial class Organizer
             if(!offer.Sender!.Equals(step.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
                 !offer.Recipient!.Equals(step.DestinationCharacter,StringComparison.OrdinalIgnoreCase)||
                 offer.Quantity!=step.Quantity||offer.Item is null||
-                OrganizationPlanContract.ItemFingerprint(offer.Item)!=OrganizationPlanContract.ItemFingerprint(step.SourceItem))
+                !OrganizationPlanContract.MatchesObservedItem(offer.Item,step.SourceItem))
                 throw new InvalidOperationException("Offer differs from the approved item or quantity.");
             Store.AdvanceTransferRun(run.Id,TransferRunState.ExchangeOpen,TransferRunState.Offered,
                 "Two-sided exact offer verified",DateTimeOffset.UtcNow);
@@ -164,7 +164,7 @@ public sealed partial class Organizer
                 await Task.Delay(50,token);
             }while(true);
             if(delivery.Quantity!=step.Quantity||delivery.Item is null||
-                OrganizationPlanContract.ItemFingerprint(delivery.Item)!=OrganizationPlanContract.ItemFingerprint(step.SourceItem))
+                !OrganizationPlanContract.MatchesObservedItem(delivery.Item,step.SourceItem))
                 throw new InvalidOperationException("Delivered item differs from the approved step.");
             senderResult=sender.StopManualTradeCapture();senderCapture=false;
             recipientResult=recipient.StopManualTradeCapture();recipientCapture=false;
@@ -195,7 +195,7 @@ public sealed partial class Organizer
             await TravelToBank(recipient,token);
             await recipient.ScanNearbyBank(null,token);
             var received=recipient.Inventory().Where(x=>ItemGroups.Key(x)==step.ItemKey&&
-                OrganizationPlanContract.ItemFingerprint(x)==OrganizationPlanContract.ItemFingerprint(step.SourceItem))
+                OrganizationPlanContract.MatchesObservedItem(x,step.SourceItem))
                 .OrderBy(x=>x.Slot).ToArray();
             if(received.Length!=1||received[0].Quantity<step.Quantity)
                 throw new InvalidOperationException("Recipient item is not uniquely identified for banking.");

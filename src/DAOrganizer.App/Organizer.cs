@@ -21,7 +21,7 @@ public sealed partial class Organizer:IDisposable
         DataDirectory=directory??Environment.GetEnvironmentVariable("DAORGANIZER_DATA_DIR")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DAOrganizer");
         if(!demo)Directory.CreateDirectory(DataDirectory);
         Store=new(demo?":memory:":Path.Combine(DataDirectory,"inventory.db"));
-        if(!demo)Store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow);
+        if(!demo)Store.ResolveKnownNoSendWithdrawalFailures(DateTimeOffset.UtcNow);
         Accounts=new(Store);
         ClientPath=Store.Get<string>("client")??ClientLauncher.DefaultClient;
         WorldLogsPath=Store.Get<string>("worldLogs")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Dark Ages","WorldLogs");

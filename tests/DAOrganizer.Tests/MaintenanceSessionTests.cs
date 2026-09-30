@@ -156,6 +156,32 @@ public class MaintenanceSessionTests
         Assert.Equal(12,Assert.Single(game.Session.BankItems()).Quantity);Assert.NotNull(game.Session.LastBankScan);
     }
     [Fact]
+    public async Task ApprovedWithdrawalCanUseTheSameScannedVisibleNpcWithoutAdjacency()
+    {
+        using var game=new Replay();game.Npc(x:15);game.Set("_ready",true);
+        game.OnSent=packet=>
+        {
+            if(packet.Command==ClientCommand.Merchant)
+            {
+                var request=(ClientMerchantMessage)ClientMessageFactory.Default.Create(packet)!;
+                Assert.Equal(42u,request.EntityId);
+                if(request.PursuitId==0x45)
+                    game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,
+                        MenuType=DialogMenuType.ItemChoices,PursuitId=86,
+                        ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+                else Assert.Equal((ushort)0x57,request.PursuitId);
+            }
+            else if(packet.Command==ClientCommand.Pursuit)game.Add(5,1);
+        };
+        await game.Session.ScanNearbyBank(null,default);
+        var item=Assert.Single(game.Session.BankItems());
+        var carried=await game.Session.WithdrawApprovedTransferOne(item,game.Session.LastBankScan!.Value,default);
+        Assert.True(OrganizationPlanContract.MatchesObservedItem(Assert.Single(game.Session.Inventory()),item));
+        Assert.NotNull(carried);
+        Assert.Equal(new[]{ClientCommand.Merchant,ClientCommand.Merchant,ClientCommand.Pursuit},
+            game.Sent.Select(x=>x.Command));
+    }
+    [Fact]
     public async Task AccountBankRefreshAtInnNeedsNoWorldLogsOrWalking()
     {
         using var game=new Replay();game.Npc("Innkeeper");game.Set("_ready",true);
@@ -327,7 +353,7 @@ public class MaintenanceSessionTests
             Receive(ServerCommand.UserAppearance,new ServerUserAppearanceMessage{UserId=10});
             Receive(ServerCommand.UserPosition,new ServerUserPositionMessage{X=10,Y=12});
         }
-        public void Npc(string name="Banker")=>Receive(ServerCommand.DrawObjects,new ServerDrawObjectsMessage{Entities=[new ServerCreatureEntity{Id=42,X=10,Y=12,CreatureType=CreatureType.Mundane,Name=name}]});
+        public void Npc(string name="Banker",ushort x=10,ushort y=12)=>Receive(ServerCommand.DrawObjects,new ServerDrawObjectsMessage{Entities=[new ServerCreatureEntity{Id=42,X=x,Y=y,CreatureType=CreatureType.Mundane,Name=name}]});
         public void StartBank()
         {
             Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{MenuType=DialogMenuType.Menu,EntityId=42,MenuChoices=[new(){Text="Withdraw Items",PursuitId=69}]});

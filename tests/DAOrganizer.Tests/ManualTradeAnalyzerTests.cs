@@ -24,6 +24,16 @@ public class ManualTradeAnalyzerTests
     }
 
     [Fact]
+    public void OptionalCompletedSubtypeAfterDeliveryKeepsExactTradeVerified()
+    {
+        var (sender,recipient)=PartialStack();
+        var completed=new TradePacketTrace(sender.FinishedAt.AddMilliseconds(-1),"Server",0x42,"0502",null);
+        sender=sender with{Packets=[..sender.Packets,completed]};
+        recipient=recipient with{Packets=[..recipient.Packets,completed]};
+        Assert.True(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+    }
+
+    [Fact]
     public void MatchingPartialStackOfferCanBeVerifiedBeforeAcceptance()
     {
         var (sender,recipient)=PartialStack();

@@ -47,7 +47,11 @@ public class ServerExchangeMessage : ServerMessage
                 Party = (ExchangeParty)reader.ReadByte();
                 GoldAmount = reader.ReadUInt32();
                 break;
-            case ExchangeServerEventType.Accepted or ExchangeServerEventType.Cancelled:
+            case ExchangeServerEventType.Accepted:
+                Party = (ExchangeParty)reader.ReadByte();
+                Message = reader.Remaining>0?reader.ReadString8():null;
+                break;
+            case ExchangeServerEventType.Cancelled:
                 Party = (ExchangeParty)reader.ReadByte();
                 Message = reader.ReadString8();
                 break;
@@ -81,7 +85,11 @@ public class ServerExchangeMessage : ServerMessage
                 builder.AppendByte((byte)Party!.Value);
                 builder.AppendUInt32(GoldAmount!.Value);
                 break;
-            case ExchangeServerEventType.Accepted or ExchangeServerEventType.Cancelled:
+            case ExchangeServerEventType.Accepted:
+                builder.AppendByte((byte)Party!.Value);
+                if(Message!=null)builder.AppendString8(Message);
+                break;
+            case ExchangeServerEventType.Cancelled:
                 builder.AppendByte((byte)Party!.Value);
                 builder.AppendString8(Message ?? string.Empty);
                 break;

@@ -17,7 +17,7 @@ public static class DirectTradePreflight
         var targets=CheckPartners(sender,recipient,step,now);
         if(carried.Slot is <1 or >59||carried.Quantity<step.Quantity||
             ItemGroups.Key(carried)!=step.ItemKey||
-            OrganizationPlanContract.ItemFingerprint(carried)!=OrganizationPlanContract.ItemFingerprint(step.SourceItem)||
+            !OrganizationPlanContract.MatchesObservedItem(carried,step.SourceItem)||
             step.SourceLocation=="Inventory"&&carried.Slot!=step.SourceSlot||
             !sender.Inventory.Contains(carried)||sender.PinnedSlots.Contains(carried.Slot))
             throw new InvalidOperationException("Exact source slot, shape or quantity changed.");

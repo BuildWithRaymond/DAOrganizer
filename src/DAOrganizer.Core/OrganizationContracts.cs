@@ -121,6 +121,14 @@ public static class OrganizationPlanContract
     public static string ItemFingerprint(Item item)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
         JsonSerializer.Serialize(new{item.Name,item.Sprite,item.Color,item.Durability,item.MaxDurability,item.IsStackable}))));
 
+    // Bank menus omit durability and stackability; inventory packets may reveal them after withdrawal.
+    // Unknown bank fields cannot be used as equality evidence, while every known field still must match.
+    public static bool MatchesObservedItem(Item observed,Item planned)=>
+        ItemGroups.Key(observed)==ItemGroups.Key(planned)&&
+        (planned.Durability is null||observed.Durability==planned.Durability)&&
+        (planned.MaxDurability is null||observed.MaxDurability==planned.MaxDurability)&&
+        (planned.IsStackable is null||observed.IsStackable==planned.IsStackable);
+
     private static bool SameItemShape(Item a,Item b)=>a with{Slot=0,Quantity=0,Category=""}==
         b with{Slot=0,Quantity=0,Category=""};
 }

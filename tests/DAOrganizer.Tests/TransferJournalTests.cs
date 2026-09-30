@@ -75,8 +75,10 @@ public class TransferJournalTests
         Assert.Throws<InvalidOperationException>(()=>store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow));
     }
 
-    [Fact]
-    public void KnownPreSendBankAgeFailureReleasesOnlyItsSourceReservation()
+    [Theory]
+    [InlineData("Source bank scan is too old for an approved withdrawal.")]
+    [InlineData("Approach and scan the same nearby banker before withdrawal.")]
+    public void KnownPreSendWithdrawalFailureReleasesOnlyItsSourceReservation(string reason)
     {
         using var store=new InventoryStore(":memory:");
         store.SaveSnapshot("Alpha","Bank",[Chest],true);
@@ -84,12 +86,11 @@ public class TransferJournalTests
         var plan=ReadyPlan(store);store.SaveOrganizationPlan(plan);
         store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
         var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
-        store.MarkTransferNeedsReconciliation(run.Id,
-            "Source bank scan is too old for an approved withdrawal.",DateTimeOffset.UtcNow);
+        store.MarkTransferNeedsReconciliation(run.Id,reason,DateTimeOffset.UtcNow);
 
-        Assert.Equal(1,store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow));
+        Assert.Equal(1,store.ResolveKnownNoSendWithdrawalFailures(DateTimeOffset.UtcNow));
         Assert.Equal(TransferRunState.Failed,store.LoadTransferRun(run.Id)!.State);
-        Assert.Equal(0,store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow));
+        Assert.Equal(0,store.ResolveKnownNoSendWithdrawalFailures(DateTimeOffset.UtcNow));
 
         var newPlan=ReadyPlan(store);store.SaveOrganizationPlan(newPlan);
         store.ApproveOrganizationPlan(newPlan.Id,DateTimeOffset.UtcNow);
@@ -111,7 +112,7 @@ public class TransferJournalTests
         store.MarkTransferNeedsReconciliation(run.Id,
             "Source bank scan is too old for an approved withdrawal.",DateTimeOffset.UtcNow);
 
-        Assert.Equal(0,store.ResolveKnownNoSendBankAgeFailures(DateTimeOffset.UtcNow));
+        Assert.Equal(0,store.ResolveKnownNoSendWithdrawalFailures(DateTimeOffset.UtcNow));
         Assert.Equal(TransferRunState.NeedsReconciliation,store.LoadTransferRun(run.Id)!.State);
     }
 

@@ -178,21 +178,20 @@ public sealed partial class GameSession:IItemMaintenanceClient
                 if(matches.Length!=1||matches[0]!=bankItem||bankItem.Quantity<1||
                     Inventory().Length>=59||Inventory().Any(x=>ItemGroups.Key(x)==ItemGroups.Key(bankItem)))
                     throw new InvalidOperationException("Bank item name or source inventory is ambiguous.");
-                var npc=HaxBankNpc();var banker=Mundanes().SingleOrDefault(x=>x.Id==npc);
-                if(BankNpcId!=npc||banker is null||
-                    Math.Abs(banker.X-Position.X)+Math.Abs(banker.Y-Position.Y)>1)
-                    throw new InvalidOperationException("Approach and scan the same nearby banker before withdrawal.");
+                var npc=BankNpcId??throw new InvalidOperationException("Scan a visible NPC before withdrawal.");
+                if(!Mundanes().Any(x=>x.Id==npc))
+                    throw new InvalidOperationException("Scanned NPC is no longer visible before withdrawal.");
                 SetStatus($"Withdrawing approved transfer: 1 {bankItem.Name}");_store.MarkStale(Name,"Bank");
                 Send(new ClientMerchantMessage{EntityType=EntityTypeFlags.Creature,EntityId=npc,
                     PursuitId=0x57,Arguments=[bankItem.Name,"1"]});
                 CloseBankPopup(npc);
             }
             bool Added()=>Inventory().Count(x=>ItemGroups.Key(x)==ItemGroups.Key(bankItem)&&
-                OrganizationPlanContract.ItemFingerprint(x)==OrganizationPlanContract.ItemFingerprint(bankItem)&&
+                OrganizationPlanContract.MatchesObservedItem(x,bankItem)&&
                 x.Quantity==1)==1;
             if(!await ConfirmBankChange(Added,sent,token,guard))return null;
             return Inventory().SingleOrDefault(x=>ItemGroups.Key(x)==ItemGroups.Key(bankItem)&&
-                OrganizationPlanContract.ItemFingerprint(x)==OrganizationPlanContract.ItemFingerprint(bankItem)&&x.Quantity==1);
+                OrganizationPlanContract.MatchesObservedItem(x,bankItem)&&x.Quantity==1);
         }
         finally{_actionGate.Release();}
     }

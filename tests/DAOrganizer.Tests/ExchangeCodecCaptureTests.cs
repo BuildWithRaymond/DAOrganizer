@@ -61,6 +61,20 @@ public class ExchangeCodecCaptureTests
         Assert.Equal("You exchanged.",message.Message);
     }
 
+    [Fact]
+    public void MerchantReceiverCompletedSubtypeWithoutMessageCanRoundTrip()
+    {
+        // DAMerchant's exchange-event5 fixture records this optional successful result.
+        var observed=Convert.FromHexString("0502");
+        var parsed=Assert.IsType<ServerExchangeMessage>(ServerMessageFactory.Default.Create(
+            new ServerPacket((byte)ServerCommand.Exchange,observed)));
+        Assert.Equal(ExchangeServerEventType.Accepted,parsed.Event);
+        Assert.Equal(ExchangeParty.Completed,parsed.Party);
+        var builder=new NetworkPacketBuilder(ServerCommand.Exchange);
+        try{parsed.Serialize(ref builder);Assert.Equal(observed,builder.ToPacket().Data);}
+        finally{builder.Dispose();}
+    }
+
     [Theory]
     [InlineData("0000126D53",ExchangeClientActionType.BeginExchange)]
     [InlineData("0500126D53",ExchangeClientActionType.Accept)]

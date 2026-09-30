@@ -156,11 +156,18 @@ public static class ManualTradeAnalyzer
         var bothAccepted=true;
         var earlyFive=sender.Server.Concat(recipient.Server).Any(x=>x.Message.Event==ExchangeServerEventType.Accepted&&x.ObservedAt<latestAccept);
         var unknownClose=UnknownCloseCandidate(sender)||UnknownCloseCandidate(recipient);
+        bool CompletionSubtypeValid(Side side)
+        {
+            var completed=side.Server.Where(x=>x.Message.Event==ExchangeServerEventType.Accepted&&
+                x.Message.Party==ExchangeParty.Completed).ToArray();
+            return completed.Length<=1&&completed.All(x=>x.ObservedAt>=latestAccept);
+        }
         // The controlled two-client capture showed the window close when both acceptances completed.
         // Require each side to see exactly one notice for each party, linked in time to that party's
         // accept, plus the recipient inventory packet after the second accept.
         var finalSignal=AcceptancePair(sender,ExchangeParty.You,senderAccept,ExchangeParty.Them,recipientAccept)&&
             AcceptancePair(recipient,ExchangeParty.Them,senderAccept,ExchangeParty.You,recipientAccept)&&
+            CompletionSubtypeValid(sender)&&CompletionSubtypeValid(recipient)&&
             sender.Server.Any(x=>x.Message.Event==ExchangeServerEventType.Accepted&&x.ObservedAt>latestAccept)&&
             recipient.Server.Any(x=>x.Message.Event==ExchangeServerEventType.Accepted&&x.ObservedAt>latestAccept)&&
             recipient.Capture.Packets.Any(x=>x.Direction=="Server"&&x.Opcode==0x0F&&x.ObservedAt>=latestAccept);
@@ -178,7 +185,8 @@ public static class ManualTradeAnalyzer
     private static bool AcceptancePair(Side side,ExchangeParty firstParty,DateTimeOffset firstAccept,
         ExchangeParty secondParty,DateTimeOffset secondAccept)
     {
-        var notices=side.Server.Where(x=>x.Message.Event==ExchangeServerEventType.Accepted).ToArray();
+        var notices=side.Server.Where(x=>x.Message.Event==ExchangeServerEventType.Accepted&&
+            x.Message.Party!=ExchangeParty.Completed).ToArray();
         return notices.Length==2&&notices.Count(x=>x.Message.Party==firstParty&&x.ObservedAt>=firstAccept)==1&&
             notices.Count(x=>x.Message.Party==secondParty&&x.ObservedAt>=secondAccept)==1;
     }
@@ -308,7 +316,9 @@ public static class ManualTradeAnalyzer
             {
                 if(ServerMessageFactory.Default.Create(new ServerPacket(packet.Opcode,bytes)) is not ServerExchangeMessage server)
                     throw new FormatException("Unexpected server exchange packet.");
-                if(server.Event==ExchangeServerEventType.GoldAdded||!Enum.IsDefined(server.Event))side.Invalid=true;
+                if(server.Event==ExchangeServerEventType.GoldAdded||!Enum.IsDefined(server.Event)||
+                    server.Event==ExchangeServerEventType.Accepted&&server.Party is not
+                        (ExchangeParty.You or ExchangeParty.Them or ExchangeParty.Completed))side.Invalid=true;
                 side.Server.Add(new(packet.ObservedAt,server));
             }
             else if(packet.Direction=="Server"&&packet.Opcode==0x0F)
