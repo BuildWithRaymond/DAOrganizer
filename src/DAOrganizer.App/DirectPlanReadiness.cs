@@ -6,7 +6,7 @@ namespace DAOrganizer.App;
 public static class DirectPlanReadiness
 {
     public static ExactOrganizationPlan Promote(ExactOrganizationPlan plan,OrganizationState state,
-        DirectTradeEndpoint sender,DirectTradeEndpoint recipient,DateTimeOffset now)
+        DirectTradeEndpoint sender,DirectTradeEndpoint recipient,DateTimeOffset now,bool controlledTrial=false)
     {
         OrganizationPlanContract.Validate(plan);
         if(plan.Steps.Length!=1||plan.InputFingerprint!=state.Fingerprint||now>=plan.ExpiresAt)
@@ -23,19 +23,28 @@ public static class DirectPlanReadiness
             step.SourceLocation=="Bank"&&source.BankState!="Current"||
             destination.BankState!="Current")
             throw new InvalidOperationException("Scan both inventories and the destination bank before approval.");
-        if(!state.Metadata.TryGetValue(step.ItemKey,out var metadata)||metadata.Stackable!=true||
-            metadata.StackLimit is not >0||metadata.Tradeability==Tradeability.NonTradeable||
-            metadata.Tradeability!=Tradeability.Tradeable&&
-            (!state.TradeEvidence.TryGetValue(step.ItemKey,out var evidence)||evidence.Successes<1))
-            throw new InvalidOperationException("A known stack limit and positive trade evidence are required.");
+        state.Metadata.TryGetValue(step.ItemKey,out var metadata);
+        state.TradeEvidence.TryGetValue(step.ItemKey,out var evidence);
+        if(metadata?.Tradeability==Tradeability.NonTradeable||evidence?.ExplicitRejections>0)
+            throw new InvalidOperationException("This item has negative trade evidence.");
         var shape=OrganizationPlanContract.ItemFingerprint(step.SourceItem);
-        var room=state.Items.Where(x=>x.Character.Equals(step.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&
-            x.Location=="Bank"&&ItemGroups.Key(x.Item)==step.ItemKey&&
-            OrganizationPlanContract.ItemFingerprint(x.Item)==shape)
-            .Sum(x=>Math.Max(0,metadata.StackLimit.Value-x.Item.Quantity));
-        if(room<step.Quantity)
-            throw new InvalidOperationException("No verified room in an existing destination bank stack.");
-        var prepared=step with{Readiness=OrganizationReadiness.Ready};
+        if(controlledTrial)
+        {
+            if(step.Quantity!=1)throw new InvalidOperationException("Controlled live trials are limited to one unit.");
+        }
+        else
+        {
+            if(metadata?.Stackable!=true||metadata.StackLimit is not >0||
+                metadata.Tradeability!=Tradeability.Tradeable&&evidence?.Successes is not >0)
+                throw new InvalidOperationException("A known stack limit and positive trade evidence are required.");
+            var room=state.Items.Where(x=>x.Character.Equals(step.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&
+                x.Location=="Bank"&&ItemGroups.Key(x.Item)==step.ItemKey&&
+                OrganizationPlanContract.ItemFingerprint(x.Item)==shape)
+                .Sum(x=>Math.Max(0,metadata.StackLimit.Value-x.Item.Quantity));
+            if(room<step.Quantity)
+                throw new InvalidOperationException("No verified room in an existing destination bank stack.");
+        }
+        var prepared=step with{Readiness=OrganizationReadiness.Ready,ControlledTrial=controlledTrial};
         if(step.SourceLocation=="Inventory")
         {
             var carried=sender.Inventory.SingleOrDefault(x=>x.Slot==step.SourceSlot)
@@ -52,7 +61,7 @@ public static class DirectPlanReadiness
                 sender.Inventory.Count>=59||sender.Inventory.Any(x=>ItemGroups.Key(x)==step.ItemKey))
                 throw new InvalidOperationException("Bank withdrawal needs one unique named item, one unit and a free, unambiguous source inventory slot.");
         }
-        var ready=plan with{Steps=[step with{Readiness=OrganizationReadiness.Ready}]};
+        var ready=plan with{Steps=[prepared]};
         OrganizationPlanContract.Validate(ready);
         return ready;
     }

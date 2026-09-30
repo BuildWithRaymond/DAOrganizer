@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using DAOrganizer.App;
 using DAOrganizer.Core;
 using DAOrganizer.Game;
@@ -75,5 +76,29 @@ public class DirectPlanReadinessTests
         sender=sender with{Inventory=[]};
         var ready=DirectPlanReadiness.Promote(plan,state,sender,recipient,DateTimeOffset.UtcNow);
         Assert.Equal(OrganizationReadiness.Ready,ready.Steps[0].Readiness);
+    }
+
+    [Fact]
+    public void OneUnitControlledTrialCanProceedWithoutCommunityKnowledge()
+    {
+        var (plan,state,sender,recipient)=Fixture();
+        state=state with{Metadata=new Dictionary<string,ItemMetadata>(),TradeEvidence=new Dictionary<string,TradeEvidence>()};
+        var trial=DirectPlanReadiness.Promote(plan,state,sender,recipient,DateTimeOffset.UtcNow,controlledTrial:true);
+        Assert.True(trial.Steps[0].ControlledTrial);
+        Assert.Throws<InvalidOperationException>(()=>DirectPlanReadiness.Promote(plan,state,sender,recipient,DateTimeOffset.UtcNow));
+        var larger=plan with{Steps=[plan.Steps[0] with{Quantity=2}]};
+        Assert.Throws<InvalidOperationException>(()=>DirectPlanReadiness.Promote(larger,state,sender,recipient,
+            DateTimeOffset.UtcNow,controlledTrial:true));
+    }
+
+    [Fact]
+    public void OldSavedStepWithoutTrialFlagLoadsAsStrict()
+    {
+        var (plan,_,_,_)=Fixture();
+        var oldJson=JsonSerializer.Serialize(plan.Steps[0]).Replace(",\"ControlledTrial\":false","",
+            StringComparison.Ordinal);
+        var loaded=JsonSerializer.Deserialize<PlannedOrganizationStep>(oldJson);
+        Assert.NotNull(loaded);
+        Assert.False(loaded.ControlledTrial);
     }
 }

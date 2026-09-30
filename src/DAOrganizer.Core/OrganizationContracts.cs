@@ -20,7 +20,8 @@ public sealed record OrganizationItemExpectation(string Character,string Locatio
 public sealed record PlannedOrganizationStep(Guid Id,int Order,string SourceCharacter,string DestinationCharacter,
     string ItemKey,Item SourceItem,string SourceLocation,int? SourceSlot,long Quantity,TransferRouteKind RouteKind,
     ImmutableArray<OrganizationRouteLeg> RouteLegs,ImmutableArray<Guid> DependsOn,OrganizationReadiness Readiness,
-    ImmutableArray<OrganizationItemExpectation> ExpectedBefore,ImmutableArray<OrganizationItemExpectation> ExpectedAfter);
+    ImmutableArray<OrganizationItemExpectation> ExpectedBefore,ImmutableArray<OrganizationItemExpectation> ExpectedAfter,
+    bool ControlledTrial=false);
 
 public sealed record ExactOrganizationPlan(Guid Id,DateTimeOffset CreatedAt,DateTimeOffset ExpiresAt,
     string InputFingerprint,ImmutableArray<PlannedOrganizationStep> Steps);
@@ -56,8 +57,12 @@ public static class OrganizationPlanContract
                 step.ExpectedAfter.Any(x=>x is null)||
                 step.DependsOn.Distinct().Count()!=step.DependsOn.Length||step.DependsOn.Any(x=>!seen.Contains(x)||x==step.Id))
                 throw new InvalidDataException("Organization plan step is malformed or has invalid dependencies.");
+            if(step.ControlledTrial&&step.Readiness!=OrganizationReadiness.Ready)
+                throw new InvalidDataException("Controlled trial must be Ready.");
             if(step.Readiness==OrganizationReadiness.Ready)
             {
+                if(step.ControlledTrial&&(step.RouteKind!=TransferRouteKind.Direct||step.Quantity!=1))
+                    throw new InvalidDataException("Controlled trials must be single-unit direct steps.");
                 if(step.SourceSlot is null||step.RouteLegs.IsEmpty||step.ExpectedBefore.IsEmpty||step.ExpectedAfter.IsEmpty||
                     step.RouteKind==TransferRouteKind.ManualOnly||
                     !step.ExpectedBefore.Any(x=>x.Character.Equals(step.SourceCharacter,StringComparison.OrdinalIgnoreCase)&&

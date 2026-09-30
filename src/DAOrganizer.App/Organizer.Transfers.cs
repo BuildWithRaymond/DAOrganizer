@@ -28,8 +28,8 @@ public sealed partial class Organizer
         // Reuse the same capacity and tradeability gate used when making the step Ready.
         DirectPlanReadiness.Promote(saved.Plan with
         {
-            Steps=[step with{Readiness=OrganizationReadiness.NeedsScan}]
-        },bankState,source,destination,now);
+            Steps=[step with{Readiness=OrganizationReadiness.NeedsScan,ControlledTrial=false}]
+        },bankState,source,destination,now,step.ControlledTrial);
         Item? carried=step.SourceLocation=="Inventory"?
             source.Inventory.SingleOrDefault(x=>x.Slot==step.SourceSlot):null;
         if(step.SourceLocation=="Inventory")

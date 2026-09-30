@@ -94,7 +94,8 @@ public sealed partial class MainWindow
                         return Task.CompletedTask;
                     }));
                 if(!_app.IsDemo)
-                    body.Children.Add(Button("Prepare selected direct step",()=>
+                {
+                    Task Prepare(bool trial)
                     {
                         try
                         {
@@ -107,18 +108,24 @@ public sealed partial class MainWindow
                             var now=DateTimeOffset.UtcNow;
                             var ready=DirectPlanReadiness.Promote(chosen,state,
                                 sender.CaptureTradeEndpoint(recipient.Name,now),
-                                recipient.CaptureTradeEndpoint(sender.Name,now),now);
+                                recipient.CaptureTradeEndpoint(sender.Name,now),now,trial);
                             if(_app.Store.ReadOrganizationState().Fingerprint!=state.Fingerprint)
                                 throw new StaleOrganizationPlanException("Saved state changed. Reopen organization review.");
                             ready=ready with{Id=Guid.NewGuid()};
                             _app.Store.SaveOrganizationPlan(ready);
-                            status.Text="Ready draft saved. Review the exact step below, then Approve.";
+                            status.Text=trial?
+                                "One-unit controlled trial saved. It may stop with the item on either character. Review, then Approve.":
+                                "Ready draft saved. Review the exact step below, then Approve.";
                             Render();
                         }
                         catch(Exception ex){status.Text=ex.Message;}
                         return Task.CompletedTask;
-                    }));
+                    }
+                    body.Children.Add(Button("Prepare selected direct step",()=>Prepare(false)));
+                    body.Children.Add(Button("Prepare one-unit controlled trial",()=>Prepare(true)));
+                }
                 body.Children.Add(Text("For a ready direct step: both clients must be adjacent and mutually visible; an inventory source is exact, or a bank source can withdraw one uniquely named unit; destination bank has a scanned matching stack with known room; trade evidence is positive. Select one step, prepare, then approve.",11,true));
+                body.Children.Add(Text("Controlled trial permits one low-value unit before tradeability or bank capacity is known. If exchange or deposit is refused, recovery shows the last verified holder. No automatic retry is sent.",11,true));
             }
             if(!_app.IsDemo)
             {
@@ -128,7 +135,9 @@ public sealed partial class MainWindow
                 {
                     var draft=entry;
                     var row=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
-                    row.Children.Add(Text($"{draft.Plan.CreatedAt.LocalDateTime:g} | {draft.Plan.Steps.Length} steps | {draft.Approval} | next {draft.NextStepOrdinal+1} | expires {draft.Plan.ExpiresAt.LocalDateTime:g}",11,true));
+                    row.Children.Add(Text($"{draft.Plan.CreatedAt.LocalDateTime:g} | {draft.Plan.Steps.Length} steps | {draft.Approval}"+
+                        (draft.Plan.Steps.Any(x=>x.ControlledTrial)?" | CONTROLLED TRIAL":"")+
+                        $" | next {draft.NextStepOrdinal+1} | expires {draft.Plan.ExpiresAt.LocalDateTime:g}",11,true));
                     var approve=Button("Approve",()=>
                     {
                         try{_app.Store.ApproveOrganizationPlan(draft.Plan.Id,DateTimeOffset.UtcNow);status.Text="Plan approved. Run the direct transfer when both clients are ready.";Render();}
