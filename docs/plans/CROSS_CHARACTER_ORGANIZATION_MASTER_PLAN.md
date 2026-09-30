@@ -1,6 +1,6 @@
 # Cross-character organization: master execution plan
 
-Status: **proposed handoff plan; implementation paused pending user approval**. Checked against the local worktree on 2026-09-29. This plan records completed work and allocates remaining work; it does not authorize automated trades, telemetry, deployment, or app updates.
+Status: **approved execution map; Phases 0–1 implemented on 2026-09-29**. User authorized Phases 0–1 only. Later phases, automated trades, telemetry, deployment, and app updates remain outside current scope. The tables below preserve the original pre-implementation assessment; see [Phase 1 contract](../handoffs/phase1-organization-contract.md) for current state.
 
 ## Goal and user-facing behavior
 
@@ -180,4 +180,4 @@ Do not unlock direct-transfer sends from codec unit tests or the two existing ma
 3. **Must wait:** direct exchange waits for planner/observer merge, durable journal, partner/quantity/finality proof and controlled live validation. Middleman waits for verified direct legs. Central service waits for local anonymous event contract and hosting decision; client sync waits for service contract. Updater waits for signed release format and lifecycle design.
 4. **Bring work back:** merge C when its release dry run passes; merge A and B **one at a time** after Phase 1, running full build/unit/UI checks after each relevant integration. Then local agent completes approval UI/journal and direct-transfer gates. Start Batch B (D and optional E) only when event and signed-manifest contracts are frozen. Merge each Batch B result into the local branch and repeat privacy, migration, offline and release-recovery checks before enabling either feature.
 
-Implementation remains paused here until the user approves this execution map.
+Execution of later phases remains gated by a separate user instruction. Phase 0 baseline is `e1dd6765ac42f5afad1395d05b523b22bd7662a7` on `feature/cross-character-organization`; see the Phase 1 contract handoff for current schema and APIs.

@@ -15,10 +15,10 @@ public sealed partial class InventoryStore:IDisposable
         {
             using var versionCommand=_db.CreateCommand();versionCommand.CommandText="PRAGMA user_version";
             var version=Convert.ToInt32(versionCommand.ExecuteScalar());
-            if(version>2)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
-            if(version==1&&path!=":memory:")
+            if(version>3)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
+            if(version is 1 or 2&&path!=":memory:")
             {
-                var backup=Path.GetFullPath(path)+".v1.backup";
+                var backup=Path.GetFullPath(path)+$".v{version}.backup";
                 if(!File.Exists(backup))
                 {
                     var temporary=backup+".tmp";
@@ -101,6 +101,30 @@ public sealed partial class InventoryStore:IDisposable
                         game_client_hash TEXT);
                     """);
                 Execute("PRAGMA user_version=2");
+                migration.Commit();
+            }
+            if(version<3)
+            {
+                using var migration=_db.BeginTransaction();
+                Execute("""
+                    CREATE TABLE organization_plans(
+                        id TEXT PRIMARY KEY,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        input_fingerprint TEXT NOT NULL,
+                        approval TEXT NOT NULL DEFAULT 'Draft'
+                            CHECK(approval IN ('Draft','Approved','Completed')),
+                        checkpoint_fingerprint TEXT,
+                        checkpoint_state TEXT,
+                        next_step_ordinal INTEGER NOT NULL DEFAULT 0 CHECK(next_step_ordinal>=0));
+                    CREATE TABLE plan_steps(
+                        plan_id TEXT NOT NULL REFERENCES organization_plans(id) ON DELETE CASCADE,
+                        ordinal INTEGER NOT NULL CHECK(ordinal>=0),
+                        step_id TEXT NOT NULL,
+                        data TEXT NOT NULL,
+                        PRIMARY KEY(plan_id,ordinal),UNIQUE(plan_id,step_id));
+                    """);
+                Execute("PRAGMA user_version=3");
                 migration.Commit();
             }
         }

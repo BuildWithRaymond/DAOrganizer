@@ -15,7 +15,7 @@ public sealed record OrganizationState(
     IReadOnlyList<string> Middlemen,
     string Fingerprint);
 
-public enum TransferRouteKind { Direct, Middleman, ManualOnly }
+public enum TransferRouteKind { Direct, Middleman, ManualOnly, Local }
 public sealed record PlannedRoute(string Source,string Destination,TransferRouteKind Kind,string? Middleman,string Reason,string SourceLocation="Bank");
 public sealed record ConsolidationOpportunity(Item Item,IReadOnlyList<string> Owners,string? ProposedHolder,
     int CurrentBankSlots,int PotentialBankSlots,int PotentialSlotsFreed,int VerifiedSlotsFreed,

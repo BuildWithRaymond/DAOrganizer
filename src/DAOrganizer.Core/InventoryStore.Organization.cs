@@ -14,6 +14,21 @@ public sealed partial class InventoryStore
             Execute("BEGIN DEFERRED TRANSACTION");
             try
             {
+                var result=ReadOrganizationStateWithinTransaction();
+                Execute("COMMIT");
+                return result;
+            }
+            catch
+            {
+                Execute("ROLLBACK");
+                throw;
+            }
+        }
+    }
+
+    // Caller holds _gate and a database transaction. Approval uses BEGIN IMMEDIATE to keep its check and write atomic.
+    private OrganizationState ReadOrganizationStateWithinTransaction()
+    {
                 var characters=Characters();
                 var items=Search("").OrderBy(x=>x.Character,StringComparer.OrdinalIgnoreCase)
                     .ThenBy(x=>x.Location,StringComparer.Ordinal).ThenBy(x=>x.Item.Slot).ToArray();
@@ -47,14 +62,6 @@ public sealed partial class InventoryStore
                 var middlemen=characters.Where(x=>MiddlemanCapable(x.Name)).Select(x=>x.Name).OrderBy(x=>x,StringComparer.OrdinalIgnoreCase).ToArray();
                 var payload=JsonSerializer.Serialize(new{characters,items,gameAccounts,assignments,roles,rules,metadata,overrides,tradeEvidence,settings,coexist,middlemen});
                 var fingerprint=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
-                Execute("COMMIT");
                 return new(characters,items,gameAccounts,assignments,roles,rules,metadata,overrides,tradeEvidence,settings,coexist,middlemen,fingerprint);
-            }
-            catch
-            {
-                Execute("ROLLBACK");
-                throw;
-            }
-        }
     }
 }
