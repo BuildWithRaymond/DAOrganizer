@@ -1,6 +1,6 @@
 # Phase 1 exact organization contract
 
-Phase 0 baseline: `e1dd6765ac42f5afad1395d05b523b22bd7662a7` on `feature/cross-character-organization`. Phase 1 adds schema v3 and frozen Core records. The existing `OrganizationPlan` and `OrganizationPlanner.Build(OrganizationState)` remain read-only preview; no preview group is implicitly approved or executable.
+Phase 0 baseline: `e1dd6765ac42f5afad1395d05b523b22bd7662a7`; final Phase 1 baseline: `23bee187c1f82110c84f2cf376fadafd3f37de02` on `feature/cross-character-organization`. Phase 1 adds schema v3 and frozen Core records. The existing `OrganizationPlan` and `OrganizationPlanner.Build(OrganizationState)` remain read-only preview; no preview group is implicitly approved or executable.
 
 ## Planner output for Cloud Task A
 
