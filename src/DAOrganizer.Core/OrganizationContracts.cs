@@ -45,11 +45,14 @@ public static class OrganizationPlanContract
             if(step.Id==Guid.Empty||!seen.Add(step.Id)||step.Order!=i||string.IsNullOrWhiteSpace(step.SourceCharacter)||
                 string.IsNullOrWhiteSpace(step.DestinationCharacter)||step.SourceItem is null||
                 string.IsNullOrWhiteSpace(step.SourceItem.Name)||
-                step.ItemKey!=ItemGroups.Key(step.SourceItem)||step.SourceSlot!=step.SourceItem.Slot||
+                step.ItemKey!=ItemGroups.Key(step.SourceItem)||
+                step.SourceSlot is int sourceSlot&&sourceSlot!=step.SourceItem.Slot||
                 step.Quantity<=0||step.Quantity>step.SourceItem.Quantity||string.IsNullOrWhiteSpace(step.SourceLocation)||
                 step.SourceSlot is <=0||step.DependsOn.IsDefault||step.RouteLegs.IsDefault||
                 step.ExpectedBefore.IsDefault||step.ExpectedAfter.IsDefault||
+                !Enum.IsDefined(step.Readiness)||!Enum.IsDefined(step.RouteKind)||
                 step.RouteLegs.Any(x=>x is null)||step.ExpectedBefore.Any(x=>x is null)||
+                step.RouteLegs.Any(x=>!Enum.IsDefined(x.Kind))||
                 step.ExpectedAfter.Any(x=>x is null)||
                 step.DependsOn.Distinct().Count()!=step.DependsOn.Length||step.DependsOn.Any(x=>!seen.Contains(x)||x==step.Id))
                 throw new InvalidDataException("Organization plan step is malformed or has invalid dependencies.");

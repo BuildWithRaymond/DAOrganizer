@@ -211,6 +211,20 @@ public class OrganizationPlanContractTests
     }
 
     [Fact]
+    public void NeedsScanCandidateCanPreserveUnknownSourceSlotWithoutApproval()
+    {
+        using var store=new InventoryStore(":memory:");
+        var step=Step(0,"Bank","Bank") with
+        {
+            SourceSlot=null,Readiness=OrganizationReadiness.NeedsScan,
+            RouteLegs=[],ExpectedBefore=[],ExpectedAfter=[]
+        };
+        var plan=Plan(store,step);store.SaveOrganizationPlan(plan);
+        Assert.Null(Assert.Single(store.LoadOrganizationPlan(plan.Id)!.Plan.Steps).SourceSlot);
+        Assert.Throws<InvalidOperationException>(()=>store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
     public void UnrelatedInventoryChangeDoesNotConfirmApprovedStep()
     {
         using var store=new InventoryStore(":memory:");
