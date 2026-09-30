@@ -208,6 +208,43 @@ public sealed partial class InventoryStore
         }
     }
 
+    // Caller must verify the saved two-session trace and persisted inventories before releasing
+    // this reservation. The withdrawn item remains in source inventory; original step stays spent.
+    public TransferRun ReleaseUncommittedQuantityPrompt(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                using var events=_db.CreateCommand();
+                events.CommandText="SELECT state FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 2";
+                events.Parameters.AddWithValue("$id",id.ToString("D"));
+                using var reader=events.ExecuteReader();var latest=new List<string>();
+                while(reader.Read())latest.Add(reader.GetString(0));
+                reader.Close();
+                if(run.State!=TransferRunState.NeedsReconciliation||
+                    !string.Equals(run.LastVerifiedHolder,run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+                    run.Reason?.StartsWith("Exact two-sided offer was not verified:",StringComparison.Ordinal)!=true||
+                    latest.Count!=2||latest[0]!="NeedsReconciliation"||latest[1]!="ExchangeOpen"||now<run.UpdatedAt)
+                    throw new InvalidOperationException("Only an uncommitted source-held quantity prompt can be released.");
+                const string reason="Saved exchange capture proves no offer or acceptance; withdrawn unit remains in source inventory.";
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("UPDATE transfer_runs SET state='Failed',reason=$reason,updated_at=$at WHERE id=$id",
+                    ("$reason",reason),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'Failed',$at,$reason)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$reason",reason));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
     public TransferRun AdvanceTransferRun(Guid id,TransferRunState expected,TransferRunState next,
         string detail,DateTimeOffset now)
     {

@@ -49,6 +49,41 @@ public class ManualTradeAnalyzerTests
     }
 
     [Fact]
+    public void OneCarriedUnitStillNeedsTheObservedStackQuantityPrompt()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with{BeforeInventory=[sender.BeforeInventory[0] with{Quantity=1}],
+            AfterInventory=[sender.BeforeInventory[0] with{Quantity=1}],
+            Packets=sender.Packets.Take(4).ToArray()};
+        recipient=recipient with{AfterInventory=recipient.BeforeInventory,Packets=recipient.Packets.Take(1).ToArray()};
+        Assert.Equal(ExchangeAddItemResponse.QuantityPrompt,
+            ManualTradeAnalyzer.ObserveAddItemResponse(sender,recipient,38));
+        Assert.Equal(ExchangeAddItemResponse.Waiting,
+            ManualTradeAnalyzer.ObserveAddItemResponse(sender with{Packets=sender.Packets.Take(3).ToArray()},recipient,38));
+        Assert.Equal(ExchangeAddItemResponse.Invalid,
+            ManualTradeAnalyzer.ObserveAddItemResponse(sender,recipient,39));
+        Assert.NotNull(ManualTradeAnalyzer.UncommittedQuantityPromptItem(sender,recipient,38));
+        Assert.Null(ManualTradeAnalyzer.UncommittedQuantityPromptItem(
+            sender with{AfterInventory=[]},recipient,38));
+    }
+
+    [Fact]
+    public void OneUnitStackOfferWithQuantityResponseIsVerified()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=ReplaceOffer(sender,"Chest(1)");recipient=ReplaceOffer(recipient,"Chest(1)");
+        var quantity=Client(new ClientExchangeMessage{Action=ExchangeClientActionType.AddStackableItem,
+            TargetId=202,Slot=38,Quantity=1}) with{ObservedAt=sender.Packets[4].ObservedAt};
+        var remove=Server(new ServerRemoveInventoryMessage{Slot=38}) with{ObservedAt=sender.Packets[5].ObservedAt};
+        sender=sender with{BeforeInventory=[sender.BeforeInventory[0] with{Quantity=1}],AfterInventory=[],
+            Packets=[..sender.Packets.Take(4),quantity,remove,sender.Packets[6]]};
+        recipient=recipient with{AfterInventory=recipient.BeforeInventory,Packets=recipient.Packets.Take(2).ToArray()};
+        var offer=ManualTradeAnalyzer.AnalyzeOffer(sender,recipient);
+        Assert.True(offer.Verified);
+        Assert.Equal(1,offer.Quantity);
+    }
+
+    [Fact]
     public void OfferRejectsEarlyRecipientGainExtraGoldAndChangedQuantity()
     {
         var (sender,recipient)=PartialStack();
@@ -308,7 +343,7 @@ public class ManualTradeAnalyzerTests
         finally{builder.Dispose();}
     }
 
-    private static TradePacketTrace Server(ServerExchangeMessage message)
+    internal static TradePacketTrace Server(ServerExchangeMessage message)
     {
         var builder=new NetworkPacketBuilder(ServerCommand.Exchange);
         try{message.Serialize(ref builder);return new(DateTimeOffset.UtcNow,"Server",0x42,Convert.ToHexString(builder.ToPacket().Data),null);}
@@ -319,6 +354,13 @@ public class ManualTradeAnalyzerTests
     {
         var builder=new NetworkPacketBuilder(ServerCommand.AddInventory);
         try{message.Serialize(ref builder);return new(DateTimeOffset.UtcNow,"Server",0x0F,Convert.ToHexString(builder.ToPacket().Data),null);}
+        finally{builder.Dispose();}
+    }
+
+    private static TradePacketTrace Server(ServerRemoveInventoryMessage message)
+    {
+        var builder=new NetworkPacketBuilder(ServerCommand.RemoveInventory);
+        try{message.Serialize(ref builder);return new(DateTimeOffset.UtcNow,"Server",0x10,Convert.ToHexString(builder.ToPacket().Data),null);}
         finally{builder.Dispose();}
     }
 }

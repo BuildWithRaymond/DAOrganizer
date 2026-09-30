@@ -23,6 +23,7 @@ public sealed partial class Organizer:IDisposable
         Store=new(demo?":memory:":Path.Combine(DataDirectory,"inventory.db"));
         if(!demo)Store.ResolveKnownNoSendWithdrawalFailures(DateTimeOffset.UtcNow);
         if(!demo)ReconcileRecordedTransferDeliveries();
+        if(!demo)ReconcileUncommittedQuantityPrompts();
         Accounts=new(Store);
         ClientPath=Store.Get<string>("client")??ClientLauncher.DefaultClient;
         WorldLogsPath=Store.Get<string>("worldLogs")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Dark Ages","WorldLogs");

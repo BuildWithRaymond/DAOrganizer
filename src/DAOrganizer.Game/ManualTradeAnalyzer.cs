@@ -9,6 +9,7 @@ using DAOrganizer.Core;
 namespace DAOrganizer.Game;
 
 public enum ManualTradeOutcome { Inconclusive, Verified, ExplicitItemDenied }
+public enum ExchangeAddItemResponse { Waiting, QuantityPrompt, OfferPresented, Invalid }
 
 public sealed record ManualTradeEvidence(bool PartnerIdentitiesMatched=false,bool OffersMatched=false,
     bool BothAccepted=false,bool EarlyEventFiveObserved=false,bool SuccessfulFinalSignalOnBothSides=false,
@@ -28,6 +29,57 @@ public sealed record ManualTradeOfferAnalysis(bool Verified,string Reason,string
 // Pure review of two bounded captures. It sends nothing and never turns a timeout/cancel into non-tradeable evidence.
 public static class ManualTradeAnalyzer
 {
+    // Decide whether the server requested a quantity. Stackable items can prompt even at quantity one.
+    public static ExchangeAddItemResponse ObserveAddItemResponse(ManualTradeResult senderCapture,
+        ManualTradeResult recipientCapture,byte slot)
+    {
+        if(senderCapture.OperationId!=recipientCapture.OperationId||
+            senderCapture.ProcessId==recipientCapture.ProcessId||
+            senderCapture.Character.Equals(recipientCapture.Character,StringComparison.OrdinalIgnoreCase)||
+            senderCapture.Truncated||recipientCapture.Truncated||senderCapture.TimelineTruncated||
+            recipientCapture.TimelineTruncated||senderCapture.FilteredTimeline is null||
+            recipientCapture.FilteredTimeline is null)
+            return ExchangeAddItemResponse.Invalid;
+        Side sender,recipient;
+        try{sender=Decode(senderCapture);recipient=Decode(recipientCapture);}
+        catch{return ExchangeAddItemResponse.Invalid;}
+        if(sender.Invalid||recipient.Invalid||!PartnerIdentitiesMatch(sender,recipient)||
+            !sender.Client.Select(x=>x.Message.Action).SequenceEqual(
+                [ExchangeClientActionType.BeginExchange,ExchangeClientActionType.AddItem])||
+            sender.Client[1].Message.Slot!=slot||recipient.Client.Count!=0||
+            sender.Server.Count(x=>x.Message.Event==ExchangeServerEventType.Started)!=1||
+            recipient.Server.Count(x=>x.Message.Event==ExchangeServerEventType.Started)!=1||
+            sender.Server.Any(x=>x.Message.Event is not (ExchangeServerEventType.Started or
+                ExchangeServerEventType.QuantityPrompt or ExchangeServerEventType.ItemAdded))||
+            recipient.Server.Any(x=>x.Message.Event is not (ExchangeServerEventType.Started or
+                ExchangeServerEventType.ItemAdded)))return ExchangeAddItemResponse.Invalid;
+        var prompts=sender.Server.Where(x=>x.Message.Event==ExchangeServerEventType.QuantityPrompt).ToArray();
+        var ownOffers=sender.Server.Where(x=>x.Message.Event==ExchangeServerEventType.ItemAdded).ToArray();
+        var otherOffers=recipient.Server.Where(x=>x.Message.Event==ExchangeServerEventType.ItemAdded).ToArray();
+        var selectedAt=sender.Client[1].ObservedAt;
+        if(prompts.Length>1||prompts.Any(x=>x.Message.Slot!=slot||x.ObservedAt<selectedAt)||
+            ownOffers.Length>1||otherOffers.Length>1||
+            ownOffers.Any(x=>x.ObservedAt<selectedAt)||otherOffers.Any(x=>x.ObservedAt<selectedAt)||
+            prompts.Length>0&&(ownOffers.Length!=0||otherOffers.Length!=0))return ExchangeAddItemResponse.Invalid;
+        if(prompts.Length==1)return sender.InventoryAdds.Count==0&&sender.InventoryRemoves.Count==0&&
+            recipient.InventoryAdds.Count==0&&recipient.InventoryRemoves.Count==0?
+            ExchangeAddItemResponse.QuantityPrompt:ExchangeAddItemResponse.Invalid;
+        if(ownOffers.Length==1&&otherOffers.Length==1)return ExchangeAddItemResponse.OfferPresented;
+        return ExchangeAddItemResponse.Waiting;
+    }
+
+    // Only a selected item followed by a quantity prompt, with no offer, acceptance, or
+    // inventory change on either side, proves this exchange never moved the item.
+    public static Item? UncommittedQuantityPromptItem(ManualTradeResult sender,ManualTradeResult recipient,byte slot)
+    {
+        if(ObserveAddItemResponse(sender,recipient,slot)!=ExchangeAddItemResponse.QuantityPrompt||
+            sender.BeforeGold!=sender.AfterGold||recipient.BeforeGold!=recipient.AfterGold||
+            !sender.BeforeInventory.OrderBy(x=>x.Slot).SequenceEqual(sender.AfterInventory.OrderBy(x=>x.Slot))||
+            !recipient.BeforeInventory.OrderBy(x=>x.Slot).SequenceEqual(recipient.AfterInventory.OrderBy(x=>x.Slot)))
+            return null;
+        return sender.BeforeInventory.SingleOrDefault(x=>x.Slot==slot);
+    }
+
     public static ManualTradeOfferAnalysis AnalyzeOffer(ManualTradeResult first,ManualTradeResult second)
     {
         ManualTradeOfferAnalysis No(string reason)=>new(false,reason);

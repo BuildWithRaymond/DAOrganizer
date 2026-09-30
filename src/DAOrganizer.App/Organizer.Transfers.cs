@@ -7,6 +7,44 @@ namespace DAOrganizer.App;
 
 public sealed partial class Organizer
 {
+    private void ReconcileUncommittedQuantityPrompts()
+    {
+        foreach(var run in Store.ListTransferRuns(200).Where(x=>x.State==TransferRunState.NeedsReconciliation&&
+            x.Reason?.StartsWith("Exact two-sided offer was not verified:",StringComparison.Ordinal)==true))
+        {
+            var directory=Path.Combine(DataDirectory,"diagnostics","transfer-runs",run.Id.ToString("N"));
+            ManualTradeResult? sender,recipient;
+            try
+            {
+                sender=JsonSerializer.Deserialize<ManualTradeResult>(File.ReadAllText(Path.Combine(directory,"first.json")));
+                recipient=JsonSerializer.Deserialize<ManualTradeResult>(File.ReadAllText(Path.Combine(directory,"second.json")));
+            }
+            catch(IOException){continue;}
+            catch(UnauthorizedAccessException){continue;}
+            catch(JsonException){continue;}
+            if(sender is null||recipient is null||sender.OperationId!=run.Id.ToString("N")||
+               recipient.OperationId!=run.Id.ToString("N")||
+               !string.Equals(sender.Character,run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+               !string.Equals(recipient.Character,run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))continue;
+            var step=Store.LoadOrganizationPlan(run.PlanId)?.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+            if(step is null||step.RouteKind!=TransferRouteKind.Direct||step.SourceLocation!="Bank"||
+               step.Quantity!=run.Quantity||run.Quantity!=1)continue;
+            var matches=sender.BeforeInventory.Where(x=>
+                OrganizationPlanContract.MatchesObservedItem(x,step.SourceItem)&&x.Quantity>=run.Quantity).ToArray();
+            if(matches.Length!=1||matches[0].Slot is <1 or >255)continue;
+            var carried=matches[0];
+            Item? uncommitted;
+            try{uncommitted=ManualTradeAnalyzer.UncommittedQuantityPromptItem(sender,recipient,(byte)carried.Slot);}
+            catch(Exception){continue;}
+            if(uncommitted is null||!OrganizationPlanContract.MatchesObservedItem(uncommitted,step.SourceItem)||
+                !Store.Items(run.SourceCharacter,"Inventory").OrderBy(x=>x.Slot)
+                    .SequenceEqual(sender.AfterInventory.OrderBy(x=>x.Slot))||
+                !Store.Items(run.DestinationCharacter,"Inventory").OrderBy(x=>x.Slot)
+                    .SequenceEqual(recipient.AfterInventory.OrderBy(x=>x.Slot)))continue;
+            Store.ReleaseUncommittedQuantityPrompt(run.Id,DateTimeOffset.UtcNow);
+        }
+    }
+
     private void ReconcileRecordedTransferDeliveries()
     {
         foreach(var run in Store.ListTransferRuns(200).Where(x=>x.State==TransferRunState.NeedsReconciliation&&
@@ -152,9 +190,23 @@ public sealed partial class Organizer
             await WaitTradeSignal(()=>recipient.PeekManualTradeCapture(),0,TimeSpan.FromSeconds(8),CheckPartners,token);
             CheckPartners();token.ThrowIfCancellationRequested();
             senderLease.Send(ExchangeClientActionType.AddItem,targets.SenderTargetId,(byte)offeredItem.Slot);
-            if(offeredItem.Quantity>1)
+            var addItemDeadline=DateTimeOffset.UtcNow.AddSeconds(8);
+            ExchangeAddItemResponse addItemResponse;
+            do
             {
-                await WaitTradeSignal(()=>sender.PeekManualTradeCapture(),1,TimeSpan.FromSeconds(8),CheckPartners,token);
+                CheckPartners();token.ThrowIfCancellationRequested();
+                var a=sender.PeekManualTradeCapture();var b=recipient.PeekManualTradeCapture();
+                if(TradeCancelled(a)||TradeCancelled(b))throw new InvalidOperationException("Exchange was cancelled or denied.");
+                addItemResponse=ManualTradeAnalyzer.ObserveAddItemResponse(a,b,(byte)offeredItem.Slot);
+                if(addItemResponse==ExchangeAddItemResponse.Invalid)
+                    throw new InvalidOperationException("Unexpected exchange response to selected source slot.");
+                if(addItemResponse!=ExchangeAddItemResponse.Waiting)break;
+                if(DateTimeOffset.UtcNow>=addItemDeadline)
+                    throw new TimeoutException("Exchange add-item response was not observed; no retry sent.");
+                await Task.Delay(50,token);
+            }while(true);
+            if(addItemResponse==ExchangeAddItemResponse.QuantityPrompt)
+            {
                 CheckPartners();token.ThrowIfCancellationRequested();
                 senderLease.Send(ExchangeClientActionType.AddStackableItem,targets.SenderTargetId,
                     (byte)offeredItem.Slot,(byte)step.Quantity);
