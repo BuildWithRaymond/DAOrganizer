@@ -10,10 +10,12 @@ public sealed partial class MainWindow
     {
         var window=DialogWindow("Organization plan",780);var panel=DialogPanel();
         var body=new StackPanel{Spacing=12};var status=Text("Analysis only. No items will move.",12,true);
+        var createdAt=DateTimeOffset.UtcNow;
         void Render()
         {
             body.Children.Clear();
-            var plan=OrganizationPlanner.Build(_app.Store.ReadOrganizationState());
+            var state=_app.Store.ReadOrganizationState();
+            var plan=OrganizationPlanner.Build(state);
             body.Children.Add(Text("Cross-character bank opportunities",22));
             if(!_app.IsDemo)
             {
@@ -59,6 +61,64 @@ public sealed partial class MainWindow
             }
             body.Children.Add(Text($"{plan.Groups.Count} duplicate groups · {plan.CurrentBankSlots} current bank entries · up to {plan.PotentialSlotsFreed} entries could be freed",14));
             body.Children.Add(Text("Potential savings assume stacks can fit. Confirmed savings stay zero until stack limits, bank capacity, tradeability, and exchange are verified.",12,true));
+            var exact=OrganizationPlanner.BuildExact(state,createdAt,createdAt.AddMinutes(30));
+            body.Children.Add(Text("Exact step review",17));
+            if(exact is null)body.Children.Add(Text("No exact steps from current saved scans and holder choices.",12,true));
+            else
+            {
+                body.Children.Add(Text($"{exact.Steps.Length} candidates. Draft expires {exact.ExpiresAt.LocalDateTime:g}. Select steps to save a review draft.",12,true));
+                var selected=new List<(Guid Id,CheckBox Box)>();
+                foreach(var step in exact.Steps)
+                {
+                    var row=new CheckBox{Content=$"{step.SourceCharacter} {step.SourceLocation} slot {step.SourceSlot}: {step.Quantity} {step.SourceItem.Name} → {step.DestinationCharacter} Bank | {step.RouteKind} | {step.Readiness}",
+                        IsChecked=step.Readiness!=OrganizationReadiness.ManualOnly};
+                    selected.Add((step.Id,row));body.Children.Add(row);
+                }
+                if(!_app.IsDemo)
+                    body.Children.Add(Button("Save selected review draft",()=>
+                    {
+                        try
+                        {
+                            var ids=selected.Where(x=>x.Box.IsChecked==true).Select(x=>x.Id).ToArray();
+                            var chosen=OrganizationPlanSelection.Select(exact,state,ids);
+                            if(DateTimeOffset.UtcNow>=chosen.ExpiresAt)
+                                throw new InvalidOperationException("Review draft expired. Reopen organization review.");
+                            if(_app.Store.ReadOrganizationState().Fingerprint!=state.Fingerprint)
+                                throw new StaleOrganizationPlanException("Saved state changed. Reopen organization review.");
+                            if(_app.Store.LoadOrganizationPlan(chosen.Id) is null)
+                                _app.Store.SaveOrganizationPlan(chosen);
+                            status.Text=$"Review draft {chosen.Id:D} has {chosen.Steps.Length} selected steps.";
+                            Render();
+                        }
+                        catch(Exception ex){status.Text=ex.Message;}
+                        return Task.CompletedTask;
+                    }));
+                body.Children.Add(Text("NeedsScan means bank capacity and live transfer evidence are missing. Drafts cannot run until every step is Ready.",11,true));
+            }
+            if(!_app.IsDemo)
+            {
+                var saved=_app.Store.ListOrganizationPlans(10);
+                if(saved.Count>0)body.Children.Add(Text("Saved review drafts",17));
+                foreach(var entry in saved)
+                {
+                    var draft=entry;
+                    var row=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};
+                    row.Children.Add(Text($"{draft.Plan.CreatedAt.LocalDateTime:g} | {draft.Plan.Steps.Length} steps | {draft.Approval} | next {draft.NextStepOrdinal+1} | expires {draft.Plan.ExpiresAt.LocalDateTime:g}",11,true));
+                    var approve=Button("Approve",()=>
+                    {
+                        try{_app.Store.ApproveOrganizationPlan(draft.Plan.Id,DateTimeOffset.UtcNow);status.Text="Plan approved for checkpoint review. Exchange sending remains gated.";Render();}
+                        catch(Exception ex){status.Text=ex.Message;}
+                        return Task.CompletedTask;
+                    });
+                    approve.IsEnabled=draft.Approval==PlanApprovalState.Draft&&draft.Plan.ExpiresAt>DateTimeOffset.UtcNow&&
+                        draft.Plan.Steps.All(x=>x.Readiness==OrganizationReadiness.Ready);
+                    row.Children.Add(approve);body.Children.Add(row);
+                }
+                var runs=_app.Store.ListTransferRuns(10);
+                if(runs.Count>0)body.Children.Add(Text("Transfer recovery",17));
+                foreach(var run in runs)
+                    body.Children.Add(Text($"{run.State}: {run.Quantity} from {run.SourceCharacter} to {run.DestinationCharacter}. Last verified holder: {run.LastVerifiedHolder}. {run.Reason}",12,true));
+            }
             if(plan.Groups.Count==0)body.Children.Add(Text("No duplicate bank groups found in saved scans.",13,true));
             foreach(var group in plan.Groups)
             {

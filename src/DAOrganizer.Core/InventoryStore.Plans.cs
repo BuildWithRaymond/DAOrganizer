@@ -27,6 +27,21 @@ public sealed partial class InventoryStore
         lock(_gate)return LoadOrganizationPlanCore(id);
     }
 
+    public IReadOnlyList<SavedOrganizationPlan> ListOrganizationPlans(int limit=50)
+    {
+        if(limit is <1 or >200)throw new ArgumentOutOfRangeException(nameof(limit));
+        lock(_gate)
+        {
+            using var command=_db.CreateCommand();
+            command.CommandText="SELECT id FROM organization_plans ORDER BY created_at DESC,id DESC LIMIT $limit";
+            command.Parameters.AddWithValue("$limit",limit);
+            using var reader=command.ExecuteReader();var ids=new List<Guid>();
+            while(reader.Read())ids.Add(Guid.Parse(reader.GetString(0)));
+            reader.Close();
+            return ids.Select(id=>LoadOrganizationPlanCore(id)!).ToArray();
+        }
+    }
+
     private SavedOrganizationPlan? LoadOrganizationPlanCore(Guid id)
     {
         using var command=_db.CreateCommand();

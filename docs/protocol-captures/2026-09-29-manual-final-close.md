@@ -1,0 +1,9 @@
+# Controlled manual single-item close observation
+
+One new two-session, low-value manual exchange was captured on 2026-09-29 using the current payload-free opcode timeline. Raw JSON remains only in the local profile. This note omits names, IDs, item identity, inventory lists, and payloads.
+
+The sender issued client `0x4A` actions 0 and 1, then action 5. Its server `0x42` accepted notice for `You` followed that accept. The recipient then issued action 5. After that second accept, both sessions received their other party's `0x42` accepted notice; the recipient also received server `0x0F` adding the item. Both before/after inventories conserved exactly one item, other items and gold stayed stable, offers matched, and neither trace or timeline was truncated. The user observed the exchange window close when both parties accepted.
+
+The filtered timeline after the accepts contained server `0x08` status packets, which are not a separate exchange-close opcode. No unknown post-accept server opcode was observed. Early event `0x42/5` remains insufficient: it appears on both sides before the second accept. The supported manual-capture success pattern requires each session to receive one accepted notice for each party at or after that party's accept, a post-second-accept notice on both sessions, an exact recipient inventory packet after the second accept, matching offers, and two-sided inventory conservation. Cancellation, duplicate notices, missing delivery, extra actions, and unknown post-accept opcodes remain inconclusive.
+
+The updated analyzer replays this local capture as `Verified` for quantity 1. Both payload-free timelines are required; older captures without them remain inconclusive. This supports recording one local manual tradeability success. It does not establish recipient free capacity, an automated target-selection contract, or stack quantity for all items. No outbound exchange sends are enabled.

@@ -21,7 +21,7 @@ Each channel has its own `release-stable.json` or `release-beta.json`. Manifest 
 - channel, semantic version, and source tag;
 - artifact name, GitHub release URL, byte size, and lowercase SHA-256;
 - changelog/release-notes reference;
-- minimum client version, minimum API version (`none`, because no central API is required), and supported profile schema range (1–3);
+- minimum client version, minimum API version (`none`, because no central API is required), and supported profile schema range (1–4);
 - explicit `signed: false` and `informationalOnly: true` trust fields.
 
 The adjacent `.sha256` file detects accidental corruption when it is obtained through a trusted path. **It does not authenticate the publisher or release.** There is no approved code-signing identity, manifest-signing key, key-rotation/revocation policy, or client verification policy. Therefore manifests are informational and updater activation remains disabled. Do not add an updater or claim authenticity until those decisions are reviewed.

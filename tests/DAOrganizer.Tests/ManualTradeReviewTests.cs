@@ -7,7 +7,7 @@ namespace DAOrganizer.Tests;
 public class ManualTradeReviewTests
 {
     [Fact]
-    public void SavingAcceptedCaptureWithoutProvenCloseRecordsNoSuccess()
+    public void SavingFullyObservedManualTradeRecordsOneSuccess()
     {
         var directory=Path.Combine(Path.GetTempPath(),"daorganizer-trade-review-"+Guid.NewGuid().ToString("N"));
         try
@@ -15,12 +15,12 @@ public class ManualTradeReviewTests
             using var organizer=new Organizer(directory);
             var (sender,recipient)=ManualTradeAnalyzerTests.PartialStack();
             var path=organizer.SaveManualTradeCapture(sender,recipient);
-            Assert.False(organizer.LastManualTradeAnalysis?.Verified);
+            Assert.True(organizer.LastManualTradeAnalysis?.Verified);
             Assert.True(File.Exists(Path.Combine(path,"first.json")));
             Assert.True(File.Exists(Path.Combine(path,"second.json")));
-            Assert.Equal(Tradeability.Unknown,organizer.Store.TradeEvidence(sender.BeforeInventory[0]).State);
+            Assert.Equal(1,organizer.Store.TradeEvidence(sender.BeforeInventory[0]).Successes);
             organizer.SaveManualTradeCapture(sender,recipient);
-            Assert.Equal(0,organizer.Store.TradeEvidence(sender.BeforeInventory[0]).Successes);
+            Assert.Equal(1,organizer.Store.TradeEvidence(sender.BeforeInventory[0]).Successes);
         }
         finally
         {

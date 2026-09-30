@@ -31,6 +31,10 @@ These are sorting preferences, not locks. Drag potions normally. Right-click any
 
 ## Read bank contents
 
+**Organization plan** shows possible cross-character consolidation. Choose a preferred holder, review exact source slot, quantity, destination and route, then select steps to save a review draft. Drafts expire after 30 minutes; the dialog shows their status and any transfer journal needing reconciliation. Potential slot savings are estimates. Current exact steps require more capacity and exchange evidence, so they cannot be approved or run. The organizer sends no exchange packets from this screen.
+
+For a controlled manual trade capture, connect two distinct organizer-launched clients, select both in **Organization plan**, and start capture. Complete one low-value trade manually, wait for both accepts, recipient inventory gain and exchange-window close, then stop and save. The capture stays under the local profile's `diagnostics/manual-trades` folder and contains names and packet payloads; do not share raw JSON.
+
 Use **Scan Bank** near any visible NPC, including an innkeeper. The organizer requests the list without walking or transferring anything, and no WorldLogs are required. A complete response saves a snapshot. **Travel to bank** is a separate action for visiting a selected bank. Automatic deposits and withdrawals still travel to a bank before transferring items.
 
 A correlated withdrawal-list request with no response for 10 seconds records an empty bank. Unrelated dialogs, malformed responses, movement and connection loss remain failures and preserve previous data.

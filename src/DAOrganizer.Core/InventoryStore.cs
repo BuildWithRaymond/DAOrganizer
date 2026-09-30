@@ -15,8 +15,8 @@ public sealed partial class InventoryStore:IDisposable
         {
             using var versionCommand=_db.CreateCommand();versionCommand.CommandText="PRAGMA user_version";
             var version=Convert.ToInt32(versionCommand.ExecuteScalar());
-            if(version>3)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
-            if(version is 1 or 2&&path!=":memory:")
+            if(version>4)throw new InvalidDataException($"Database schema {version} is newer than this app supports.");
+            if(version is 1 or 2 or 3&&path!=":memory:")
             {
                 var backup=Path.GetFullPath(path)+$".v{version}.backup";
                 if(!File.Exists(backup))
@@ -125,6 +125,39 @@ public sealed partial class InventoryStore:IDisposable
                         PRIMARY KEY(plan_id,ordinal),UNIQUE(plan_id,step_id));
                     """);
                 Execute("PRAGMA user_version=3");
+                migration.Commit();
+            }
+            if(version<4)
+            {
+                using var migration=_db.BeginTransaction();
+                Execute("""
+                    CREATE TABLE transfer_runs(
+                        id TEXT PRIMARY KEY,
+                        plan_id TEXT NOT NULL REFERENCES organization_plans(id),
+                        step_id TEXT NOT NULL,
+                        source_character TEXT NOT NULL COLLATE NOCASE,
+                        destination_character TEXT NOT NULL COLLATE NOCASE,
+                        state TEXT NOT NULL CHECK(state IN ('Preparing','InSourceInventory','ExchangeOpen',
+                            'Offered','Accepting','RecipientVerified','Banking','Complete',
+                            'NeedsReconciliation','Failed')),
+                        last_verified_holder TEXT NOT NULL COLLATE NOCASE,
+                        quantity INTEGER NOT NULL CHECK(quantity>0),
+                        before_fingerprint TEXT NOT NULL,
+                        reason TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(plan_id,step_id));
+                    CREATE UNIQUE INDEX active_transfer_source ON transfer_runs(source_character)
+                        WHERE state NOT IN ('Complete','Failed');
+                    CREATE TABLE transfer_events(
+                        run_id TEXT NOT NULL REFERENCES transfer_runs(id) ON DELETE CASCADE,
+                        ordinal INTEGER NOT NULL CHECK(ordinal>=0),
+                        state TEXT NOT NULL,
+                        observed_at TEXT NOT NULL,
+                        detail TEXT NOT NULL,
+                        PRIMARY KEY(run_id,ordinal));
+                    """);
+                Execute("PRAGMA user_version=4");
                 migration.Commit();
             }
         }

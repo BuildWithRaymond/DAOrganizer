@@ -33,6 +33,8 @@ public static class ManualTradeAnalyzer
            first.Character.Equals(second.Character,StringComparison.OrdinalIgnoreCase)||first.Truncated||second.Truncated||
            first.TimelineTruncated||second.TimelineTruncated)
             return Inconclusive("Capture sessions or packet bounds are invalid.");
+        if(first.FilteredTimeline is null||second.FilteredTimeline is null)
+            return Inconclusive("Both sessions need a complete payload-free opcode timeline.");
         var goldStable=first.BeforeGold==first.AfterGold&&second.BeforeGold==second.AfterGold;
         if(!goldStable)return Inconclusive("Gold changed during the exchange.",new(GoldStable:false));
 
@@ -58,6 +60,8 @@ public static class ManualTradeAnalyzer
                     ExplicitItemDenialObserved:true));
         }
         if(!identities)return Inconclusive("Partner identity is incomplete or reused.",new(GoldStable:true));
+        if(sender.Server.Concat(recipient.Server).Any(x=>x.Message.Event==ExchangeServerEventType.Cancelled))
+            return Inconclusive("Exchange was cancelled or rejected.",new(true,GoldStable:true));
 
         var stack=sender.Client.Where(x=>x.Message.Action==ExchangeClientActionType.AddStackableItem).ToArray();
         var senderActions=sender.Client.Select(x=>x.Message.Action);
@@ -84,20 +88,37 @@ public static class ManualTradeAnalyzer
         var inventoryConserved=ExactInventoryConservation(sender.Capture,recipient.Capture,item,quantity);
         var unrelatedStable=UnrelatedInventoryStable(sender.Capture,item)&&UnrelatedInventoryStable(recipient.Capture,item);
         var inventoryPackets=InventoryPacketsMatch(sender,recipient,item,slot);
-        var latestAccept=new[]{sender.Client.Single(x=>x.Message.Action==ExchangeClientActionType.Accept).ObservedAt,
-            recipient.Client.Single(x=>x.Message.Action==ExchangeClientActionType.Accept).ObservedAt}.Max();
+        var senderAccept=sender.Client.Single(x=>x.Message.Action==ExchangeClientActionType.Accept).ObservedAt;
+        var recipientAccept=recipient.Client.Single(x=>x.Message.Action==ExchangeClientActionType.Accept).ObservedAt;
+        var latestAccept=senderAccept>recipientAccept?senderAccept:recipientAccept;
         var bothAccepted=true;
         var earlyFive=sender.Server.Concat(recipient.Server).Any(x=>x.Message.Event==ExchangeServerEventType.Accepted&&x.ObservedAt<latestAccept);
         var unknownClose=UnknownCloseCandidate(sender)||UnknownCloseCandidate(recipient);
-        // Event 5 reports acceptance and can precede the other client's accept. Neither it nor
-        // inventory conservation proves that the exchange window closed successfully.
-        var evidence=new ManualTradeEvidence(true,offersMatched,bothAccepted,earlyFive,false,inventoryConserved,
+        // The controlled two-client capture showed the window close when both acceptances completed.
+        // Require each side to see exactly one notice for each party, linked in time to that party's
+        // accept, plus the recipient inventory packet after the second accept.
+        var finalSignal=AcceptancePair(sender,ExchangeParty.You,senderAccept,ExchangeParty.Them,recipientAccept)&&
+            AcceptancePair(recipient,ExchangeParty.Them,senderAccept,ExchangeParty.You,recipientAccept)&&
+            sender.Server.Any(x=>x.Message.Event==ExchangeServerEventType.Accepted&&x.ObservedAt>latestAccept)&&
+            recipient.Server.Any(x=>x.Message.Event==ExchangeServerEventType.Accepted&&x.ObservedAt>latestAccept)&&
+            recipient.Capture.Packets.Any(x=>x.Direction=="Server"&&x.Opcode==0x0F&&x.ObservedAt>=latestAccept);
+        var evidence=new ManualTradeEvidence(true,offersMatched,bothAccepted,earlyFive,finalSignal,inventoryConserved,
             unrelatedStable,GoldStable:true,UnknownCloseSignalObserved:unknownClose);
         if(!offersMatched)return Inconclusive("The two offered item views do not match the source item and quantity.",evidence);
         if(!inventoryConserved)return Inconclusive("Before/after inventories do not conserve the exact two-sided change.",evidence);
         if(!unrelatedStable)return Inconclusive("Unrelated inventory changed during the exchange.",evidence);
         if(!inventoryPackets)return Inconclusive("Inventory change packets were not observed on both sessions.",evidence);
-        return Inconclusive("Successful final delivery and exchange-window close are not proven.",evidence);
+        if(!finalSignal||unknownClose)return Inconclusive("Complete two-sided acceptance and final delivery are not proven.",evidence);
+        return new(ManualTradeOutcome.Verified,"Two-sided acceptance and recipient delivery verified.",
+            sender.Capture.Character,recipient.Capture.Character,item,quantity,evidence);
+    }
+
+    private static bool AcceptancePair(Side side,ExchangeParty firstParty,DateTimeOffset firstAccept,
+        ExchangeParty secondParty,DateTimeOffset secondAccept)
+    {
+        var notices=side.Server.Where(x=>x.Message.Event==ExchangeServerEventType.Accepted).ToArray();
+        return notices.Length==2&&notices.Count(x=>x.Message.Party==firstParty&&x.ObservedAt>=firstAccept)==1&&
+            notices.Count(x=>x.Message.Party==secondParty&&x.ObservedAt>=secondAccept)==1;
     }
 
     private static bool PartnerIdentitiesMatch(Side sender,Side recipient)
@@ -126,7 +147,7 @@ public static class ManualTradeAnalyzer
 
     private static bool UnknownCloseCandidate(Side side)=>(side.Capture.FilteredTimeline??[])
         .Any(x=>x.ObservedAt>=side.Client.LastOrDefault(y=>y.Message.Action==ExchangeClientActionType.Accept)?.ObservedAt&&
-            x.Direction=="Server");
+            x.Direction=="Server"&&x.Opcode!=0x08);
 
     private static bool ExplicitDenial(Side side,out string reason)
     {

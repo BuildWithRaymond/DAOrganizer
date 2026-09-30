@@ -148,6 +148,13 @@ var storage=manager.OwnedWindows.Single(x=>x.Title=="Game accounts & storage");
 storage.GetVisualDescendants().OfType<ComboBox>().First().SelectedItem="Storage";Dispatcher.UIThread.RunJobs();
 Capture("storage-setup",storage);storage.Close();manager.Close();
 Click("Organization plan");
-var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);organization.Close();
+var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);
+var saveDraft=organization.GetVisualDescendants().OfType<Button>()
+    .Single(x=>x.Content as string=="Save selected review draft");
+saveDraft.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+var saved=app.Store.ListOrganizationPlans();
+if(saved.Count!=1||saved[0].Plan.Steps.Length!=1||saved[0].Approval!=PlanApprovalState.Draft)
+    throw new Exception("Selected exact review draft was not saved.");
+organization.Close();
 window.Close();
 Console.WriteLine("UI checks completed. Synthetic data only.");

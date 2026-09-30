@@ -76,7 +76,7 @@ internal static class ReleaseTool
             schemaVersion=1,channel,version,tag,
             artifact=new{name=artifactName,url=$"https://github.com/{repository}/releases/download/{tag}/{artifactName}",size=bytes.LongLength,sha256=hash},
             releaseNotes=notesUrl,
-            compatibility=new{minimumClientVersion="0.15.0",minimumApiVersion="none",minimumProfileSchema=1,maximumProfileSchema=3},
+            compatibility=new{minimumClientVersion="0.15.0",minimumApiVersion="none",minimumProfileSchema=1,maximumProfileSchema=4},
             trust=new{signed=false,informationalOnly=true}
         };
         File.WriteAllText(Path.Combine(outputPath,manifestName),JsonSerializer.Serialize(manifest,new JsonSerializerOptions{WriteIndented=true})+"\n");
@@ -147,6 +147,8 @@ internal static class ReleaseTool
             {
                 Assert(json.RootElement.GetProperty("channel").GetString()=="Stable","Stable channel was not recorded.");
                 Assert(json.RootElement.GetProperty("artifact").GetProperty("size").GetInt64()==first.LongLength,"Manifest size is wrong.");
+                Assert(json.RootElement.GetProperty("compatibility").GetProperty("maximumProfileSchema").GetInt32()==4,
+                    "Manifest schema compatibility does not match current store.");
                 Assert(json.RootElement.GetProperty("trust").GetProperty("signed").GetBoolean()==false,"Unsigned status is wrong.");
             }
             File.WriteAllText(project,"<Project><PropertyGroup><Version>1.2.3-beta.4</Version></PropertyGroup></Project>");

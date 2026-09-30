@@ -13,14 +13,22 @@ namespace DAOrganizer.Tests;
 public class ManualTradeAnalyzerTests
 {
     [Fact]
-    public void PartialStackRequiresBothAcceptsAndExactTwoPartyInventoryChange()
+    public void PartialStackWithBothAcceptanceNotificationsAndDeliveryIsVerified()
     {
         var (sender,recipient)=PartialStack();
         var result=ManualTradeAnalyzer.Analyze(sender,recipient);
-        Assert.False(result.Verified);
-        Assert.Equal(ManualTradeOutcome.Inconclusive,result.Outcome);
+        Assert.True(result.Verified);
+        Assert.Equal(ManualTradeOutcome.Verified,result.Outcome);
         Assert.True(result.Evidence?.EarlyEventFiveObserved);
-        Assert.False(result.Evidence?.SuccessfulFinalSignalOnBothSides);
+        Assert.True(result.Evidence?.SuccessfulFinalSignalOnBothSides);
+    }
+
+    [Fact]
+    public void LegacyCaptureWithoutOpcodeTimelineRemainsInconclusive()
+    {
+        var (sender,recipient)=PartialStack();
+        Assert.False(ManualTradeAnalyzer.Analyze(sender with {FilteredTimeline=null},recipient).Verified);
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient with {FilteredTimeline=null}).Verified);
     }
 
     [Fact]
@@ -41,6 +49,24 @@ public class ManualTradeAnalyzerTests
                 .Single(y=>y.Direction=="Client").ObservedAt)).ToArray()};
         var result=ManualTradeAnalyzer.Analyze(sender,recipient);
         Assert.False(result.Verified);Assert.True(result.Evidence?.EarlyEventFiveObserved);
+    }
+
+    [Fact]
+    public void MissingRecipientPostAcceptNotificationPreventsVerification()
+    {
+        var (sender,recipient)=PartialStack();
+        recipient=recipient with {Packets=recipient.Packets.Where(x=>!(x.Direction=="Server"&&x.Opcode==0x42&&
+            x.PayloadHex.StartsWith("0500",StringComparison.Ordinal)&&x.ObservedAt>recipient.Packets
+                .Single(y=>y.Direction=="Client").ObservedAt)).ToArray()};
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
+    }
+
+    [Fact]
+    public void DuplicateAcceptanceNotificationPreventsVerification()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with {Packets=[..sender.Packets,sender.Packets[^1] with {ObservedAt=sender.FinishedAt.AddMilliseconds(-1)}]};
+        Assert.False(ManualTradeAnalyzer.Analyze(sender,recipient).Verified);
     }
 
     [Fact]
@@ -152,7 +178,7 @@ public class ManualTradeAnalyzerTests
     {
         var (sender,recipient)=PartialStack();
         sender=ReplaceOffer(sender,"Chest (2)");recipient=ReplaceOffer(recipient,"Chest (2)");
-        Assert.Equal(ManualTradeOutcome.Inconclusive,ManualTradeAnalyzer.Analyze(sender,recipient).Outcome);
+        Assert.Equal(ManualTradeOutcome.Verified,ManualTradeAnalyzer.Analyze(sender,recipient).Outcome);
     }
 
     [Fact]
@@ -210,8 +236,8 @@ public class ManualTradeAnalyzerTests
         senderPackets=senderPackets.Select((x,i)=>x with {ObservedAt=now.AddSeconds(new[]{1,2,3,4,5,6,7,8,9,12}[i])}).ToArray();
         recipientPackets=recipientPackets.Select((x,i)=>x with {ObservedAt=now.AddSeconds(new[]{1,7,9,10,11,12}[i])}).ToArray();
         return (
-            new ManualTradeResult("operation","Alpha",1,now,now.AddSeconds(13),[item],[item with {Quantity=3}],0,0,senderPackets,false),
-            new ManualTradeResult("operation","Beta",2,now,now.AddSeconds(13),[],[new Item(3,"Chest",2,77,0,IsStackable:true)],0,0,recipientPackets,false));
+            new ManualTradeResult("operation","Alpha",1,now,now.AddSeconds(13),[item],[item with {Quantity=3}],0,0,senderPackets,false,[]),
+            new ManualTradeResult("operation","Beta",2,now,now.AddSeconds(13),[],[new Item(3,"Chest",2,77,0,IsStackable:true)],0,0,recipientPackets,false,[]));
     }
 
     private static ManualTradeResult ReplaceOffer(ManualTradeResult result,string name)=>result with
