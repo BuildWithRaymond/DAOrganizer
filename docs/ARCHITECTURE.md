@@ -25,6 +25,12 @@ flowchart LR
 
 SQLite stores characters, snapshot state, item records and settings. Windows Credential Manager stores optional login secrets separately. Item identity is name, sprite and color. Category overrides are explicit settings; category inference never changes identity.
 
+Schema v2 adds explicit game-account membership, coexistence policies, storage roles, exact-item preferences, local metadata and trade observations. `ReadOrganizationState()` takes one SQLite read transaction and fingerprints all organization inputs. `OrganizationPlanner` produces read-only bank consolidation opportunities, including inventory-held matches and direct/middleman/manual route candidates. Potential savings stay separate from verified savings. The UI never executes these proposals yet.
+
+`ManualTradeTrace` is an opt-in, bounded local observer of exchange and inventory packets from two organizer-proxied sessions. It records before/after inventory snapshots for protocol validation. `ManualTradeAnalyzer` checks paired sessions, partners, offers, accepts, and item conservation. A verified capture records one deduplicated local tradeability success; ambiguous captures record none. Neither component sends exchange packets or uploads traces. See [capture instructions](MANUAL_TRADE_CAPTURE.md).
+
+Manual single-item and partial-stack trades validated the action-1 writer fix, action-2 quantity layout, and several inbound exchange/inventory variants. See the [single-item](protocol-captures/2026-09-29-manual-single-item.md) and [partial-stack](protocol-captures/2026-09-29-manual-partial-stack.md) observations. Final custody semantics and a defensive two-session coordinator still gate outbound automation.
+
 Demo mode uses a separate in-memory store and explicit guards around game operations and credential changes. Screenshot generation invokes this same mode. No account profile or raw game files are included in the repository. Public screenshots depict original game sprites with fictional names and quantities.
 
 ## Tests
@@ -34,3 +40,5 @@ Unit and replay tests use synthetic packets, including movement confirmations, b
 ## Extending the project
 
 Keep packet changes in Game or the smallest necessary vendored protocol type, and document vendor changes. Keep classification rules in Core and test concrete examples. UI-only changes should not change live action authorization or confirmation. Add a reproduction when fixing a behavioral bug; avoid tests that only restate implementation details.
+
+Proposed cross-character storage architecture and phased implementation: [Cross-character organization design](superpowers/specs/2026-09-29-cross-character-organization-design.md). Current work checkpoint: [handoff](handoffs/cross-character-organization.md).

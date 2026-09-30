@@ -12,7 +12,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Local modifications: optional working directory in `Arbiter.Interop/Process/SuspendedProcess.cs`; native bank-deposit quantity serialization/deserialization in `Arbiter.Net/Client/Messages/ClientMerchantMessage.cs`. Projects target .NET 10. The upstream MIT license is retained in `vendor/Arbiter/LICENSE`.
+Local modifications: optional working directory in `Arbiter.Interop/Process/SuspendedProcess.cs`; native bank-deposit quantity serialization/deserialization in `Arbiter.Net/Client/Messages/ClientMerchantMessage.cs`; captured single-item exchange serialization in `Arbiter.Net/Client/Messages/ClientExchangeMessage.cs` (action 1 has no quantity byte); and preservation of unclassified trailing bytes in captured `ServerExchangeMessage` and `ServerAddInventoryMessage` variants. Projects target .NET 10. The upstream MIT license is retained in `vendor/Arbiter/LICENSE`.
 
 ## da-rpc
 
