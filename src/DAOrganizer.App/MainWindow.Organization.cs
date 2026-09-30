@@ -9,7 +9,7 @@ public sealed partial class MainWindow
     private async Task OrganizationPreview()
     {
         var window=DialogWindow("Organization plan",780);var panel=DialogPanel();
-        var body=new StackPanel{Spacing=12};var status=Text("Analysis only. No items will move.",12,true);
+        var body=new StackPanel{Spacing=12};var status=Text("Review exact steps before approving a transfer.",12,true);
         var createdAt=DateTimeOffset.UtcNow;
         void Render()
         {
@@ -93,7 +93,32 @@ public sealed partial class MainWindow
                         catch(Exception ex){status.Text=ex.Message;}
                         return Task.CompletedTask;
                     }));
-                body.Children.Add(Text("NeedsScan means bank capacity and live transfer evidence are missing. Drafts cannot run until every step is Ready.",11,true));
+                if(!_app.IsDemo)
+                    body.Children.Add(Button("Prepare selected direct step",()=>
+                    {
+                        try
+                        {
+                            var ids=selected.Where(x=>x.Box.IsChecked==true).Select(x=>x.Id).ToArray();
+                            var chosen=OrganizationPlanSelection.Select(exact,state,ids);
+                            if(chosen.Steps.Length!=1)throw new InvalidOperationException("Select exactly one direct step.");
+                            var step=chosen.Steps[0];
+                            var sender=_app.Session(step.SourceCharacter)??throw new InvalidOperationException("Source is offline.");
+                            var recipient=_app.Session(step.DestinationCharacter)??throw new InvalidOperationException("Recipient is offline.");
+                            var now=DateTimeOffset.UtcNow;
+                            var ready=DirectPlanReadiness.Promote(chosen,state,
+                                sender.CaptureTradeEndpoint(recipient.Name,now),
+                                recipient.CaptureTradeEndpoint(sender.Name,now),now);
+                            if(_app.Store.ReadOrganizationState().Fingerprint!=state.Fingerprint)
+                                throw new StaleOrganizationPlanException("Saved state changed. Reopen organization review.");
+                            ready=ready with{Id=Guid.NewGuid()};
+                            _app.Store.SaveOrganizationPlan(ready);
+                            status.Text="Ready draft saved. Review the exact step below, then Approve.";
+                            Render();
+                        }
+                        catch(Exception ex){status.Text=ex.Message;}
+                        return Task.CompletedTask;
+                    }));
+                body.Children.Add(Text("For a ready direct step: both clients must be adjacent and mutually visible; an inventory source is exact, or a bank source can withdraw one uniquely named unit; destination bank has a scanned matching stack with known room; trade evidence is positive. Select one step, prepare, then approve.",11,true));
             }
             if(!_app.IsDemo)
             {
@@ -106,13 +131,30 @@ public sealed partial class MainWindow
                     row.Children.Add(Text($"{draft.Plan.CreatedAt.LocalDateTime:g} | {draft.Plan.Steps.Length} steps | {draft.Approval} | next {draft.NextStepOrdinal+1} | expires {draft.Plan.ExpiresAt.LocalDateTime:g}",11,true));
                     var approve=Button("Approve",()=>
                     {
-                        try{_app.Store.ApproveOrganizationPlan(draft.Plan.Id,DateTimeOffset.UtcNow);status.Text="Plan approved for checkpoint review. Exchange sending remains gated.";Render();}
+                        try{_app.Store.ApproveOrganizationPlan(draft.Plan.Id,DateTimeOffset.UtcNow);status.Text="Plan approved. Run the direct transfer when both clients are ready.";Render();}
                         catch(Exception ex){status.Text=ex.Message;}
                         return Task.CompletedTask;
                     });
                     approve.IsEnabled=draft.Approval==PlanApprovalState.Draft&&draft.Plan.ExpiresAt>DateTimeOffset.UtcNow&&
                         draft.Plan.Steps.All(x=>x.Readiness==OrganizationReadiness.Ready);
-                    row.Children.Add(approve);body.Children.Add(row);
+                    row.Children.Add(approve);
+                    if(draft.Approval==PlanApprovalState.Approved&&draft.Plan.Steps.Length==1&&
+                        draft.Plan.Steps[0].RouteKind==TransferRouteKind.Direct)
+                    {
+                        var run=Button("Run direct transfer",async()=>
+                        {
+                            try
+                            {
+                                status.Text="Transfer running. Keep both clients open and do not move items manually.";
+                                await _app.RunOperation(t=>_app.ExecuteApprovedDirectPlan(draft.Plan.Id,t));
+                                status.Text="Transfer and destination bank confirmed.";
+                            }
+                            catch(Exception ex){status.Text="Transfer stopped: "+ex.Message+" Review recovery below.";}
+                            Render();
+                        });
+                        run.IsEnabled=!_app.Busy;row.Children.Add(run);
+                    }
+                    body.Children.Add(row);
                 }
                 var runs=_app.Store.ListTransferRuns(10);
                 if(runs.Count>0)body.Children.Add(Text("Transfer recovery",17));

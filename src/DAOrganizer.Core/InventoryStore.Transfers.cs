@@ -130,4 +130,55 @@ public sealed partial class InventoryStore
             catch{Execute("ROLLBACK");throw;}
         }
     }
+
+    public TransferRun AdvanceTransferRun(Guid id,TransferRunState expected,TransferRunState next,
+        string detail,DateTimeOffset now)
+    {
+        if(string.IsNullOrWhiteSpace(detail)||detail.Length>256)
+            throw new ArgumentException("Give a short local journal detail.",nameof(detail));
+        if(!Allowed(expected,next))throw new InvalidOperationException("Transfer journal transition is not allowed.");
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                if(run.State!=expected||now<run.UpdatedAt)
+                    throw new InvalidOperationException("Transfer journal changed or time moved backward.");
+                if(next==TransferRunState.Complete)
+                {
+                    var saved=LoadOrganizationPlanCore(run.PlanId)??throw new InvalidDataException("Journal plan is missing.");
+                    var step=saved.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId)
+                        ??throw new InvalidDataException("Journal step is missing.");
+                    if(saved.NextStepOrdinal<=step.Order)
+                        throw new InvalidOperationException("Bank and plan checkpoint are not verified.");
+                }
+                var holder=next==TransferRunState.RecipientVerified?run.DestinationCharacter:run.LastVerifiedHolder;
+                Execute("UPDATE transfer_runs SET state=$state,last_verified_holder=$holder,updated_at=$at WHERE id=$id",
+                    ("$state",next.ToString()),("$holder",holder),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,$state,$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$state",next.ToString()),
+                    ("$at",now.ToString("O")),("$detail",detail));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    private static bool Allowed(TransferRunState expected,TransferRunState next)=>(expected,next) switch
+    {
+        (TransferRunState.Preparing,TransferRunState.InSourceInventory or TransferRunState.Failed)=>true,
+        (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen)=>true,
+        (TransferRunState.ExchangeOpen,TransferRunState.Offered)=>true,
+        (TransferRunState.Offered,TransferRunState.Accepting)=>true,
+        (TransferRunState.Accepting,TransferRunState.RecipientVerified)=>true,
+        (TransferRunState.RecipientVerified,TransferRunState.Banking)=>true,
+        (TransferRunState.Banking,TransferRunState.Complete)=>true,
+        _=>false
+    };
 }

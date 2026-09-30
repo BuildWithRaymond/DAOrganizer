@@ -1,0 +1,39 @@
+using DAOrganizer.Core;
+
+namespace DAOrganizer.Game;
+
+public sealed record VisibleTradeTarget(uint Id,string Name,Tile Position,int MapId,DateTimeOffset ObservedAt);
+
+public sealed partial class GameSession
+{
+    private readonly Dictionary<uint,VisibleTradeTarget> _visibleTradeTargets=[];
+
+    public VisibleTradeTarget ResolveTradeTarget(string name,DateTimeOffset now)
+    {
+        if(string.IsNullOrWhiteSpace(name))throw new ArgumentException("Expected partner name is required.",nameof(name));
+        lock(_gate)
+        {
+            var matches=_visibleTradeTargets.Values.Where(x=>x.MapId==MapId&&x.Id!=0&&
+                x.Name.Equals(name,StringComparison.OrdinalIgnoreCase)&&x.ObservedAt<=now&&
+                now-x.ObservedAt<=TimeSpan.FromMinutes(2)).ToArray();
+            if(matches.Length!=1)
+                throw new InvalidOperationException("Expected partner is not uniquely visible with a recent server ID.");
+            return matches[0];
+        }
+    }
+
+    public DirectTradeEndpoint CaptureTradeEndpoint(string expectedPartner,DateTimeOffset now)
+    {
+        lock(_gate)
+            return new(Name,ProcessId,Ready,MapId,_playerId,Position,_inventory.Values.OrderBy(x=>x.Slot).ToArray(),
+                Gold,ResolveTradeTarget(expectedPartner,now),
+                _store.Get<HashSet<int>>("pins/"+Name.ToLowerInvariant())??[],now);
+    }
+
+    public ManualTradeResult PeekManualTradeCapture()
+    {
+        lock(_gate)
+            return (_manualTradeTrace??throw new InvalidOperationException("No trade capture is running."))
+                .Snapshot(_inventory.Values,Gold);
+    }
+}

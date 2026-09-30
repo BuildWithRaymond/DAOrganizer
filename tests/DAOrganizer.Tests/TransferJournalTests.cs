@@ -74,4 +74,36 @@ public class TransferJournalTests
         Assert.Equal("Alpha",stopped.LastVerifiedHolder);
         Assert.Throws<InvalidOperationException>(()=>store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public void JournalStagesAreOrderedAndOnlyDeliveryChangesHolder()
+    {
+        using var store=new InventoryStore(":memory:");
+        store.SaveSnapshot("Alpha","Bank",[Chest],true);
+        store.SaveSnapshot("Bravo","Bank",[],true);
+        var plan=ReadyPlan(store);store.SaveOrganizationPlan(plan);
+        store.ApproveOrganizationPlan(plan.Id,DateTimeOffset.UtcNow);
+        var run=store.BeginTransferPreparation(plan.Id,DateTimeOffset.UtcNow);
+        Assert.Throws<InvalidOperationException>(()=>store.AdvanceTransferRun(run.Id,TransferRunState.Preparing,
+            TransferRunState.Accepting,"Skipped stages",DateTimeOffset.UtcNow));
+        foreach(var (from,to) in new[]{
+            (TransferRunState.Preparing,TransferRunState.InSourceInventory),
+            (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen),
+            (TransferRunState.ExchangeOpen,TransferRunState.Offered),
+            (TransferRunState.Offered,TransferRunState.Accepting)})
+        {
+            run=store.AdvanceTransferRun(run.Id,from,to,"Synthetic stage",DateTimeOffset.UtcNow);
+            Assert.Equal("Alpha",run.LastVerifiedHolder);
+        }
+        Assert.Throws<InvalidOperationException>(()=>store.AdvanceTransferRun(run.Id,TransferRunState.Offered,
+            TransferRunState.RecipientVerified,"Wrong checkpoint",DateTimeOffset.UtcNow));
+        run=store.AdvanceTransferRun(run.Id,TransferRunState.Accepting,TransferRunState.RecipientVerified,
+            "Two-sided delivery verified",DateTimeOffset.UtcNow);
+        Assert.Equal("Bravo",run.LastVerifiedHolder);
+        run=store.MarkTransferNeedsReconciliation(run.Id,"Bank refused deposit",DateTimeOffset.UtcNow);
+        Assert.Equal("Bravo",run.LastVerifiedHolder);
+        Assert.Equal(TransferRunState.NeedsReconciliation,run.State);
+        Assert.Throws<InvalidOperationException>(()=>store.AdvanceTransferRun(run.Id,TransferRunState.NeedsReconciliation,
+            TransferRunState.Banking,"Unsafe replay",DateTimeOffset.UtcNow));
+    }
 }

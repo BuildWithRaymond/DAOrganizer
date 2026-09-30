@@ -10,6 +10,19 @@ namespace DAOrganizer.Tests;
 public class ManualTradeTraceTests
 {
     [Fact]
+    public void SnapshotLeavesCaptureOpenForLaterDelivery()
+    {
+        var trace=new ManualTradeTrace("operation","Alpha",1,[new Item(4,"Chest",2,15)],0);
+        trace.Add(new ClientPacket(0x4A,[0,1,2,3,4]));
+        var pending=trace.Snapshot([new Item(4,"Chest",1,15)],0);
+        Assert.Single(pending.Packets);
+        trace.Add(new ServerPacket(0x42,[5,0,0]));
+        var finished=trace.Finish([new Item(4,"Chest",1,15)],0);
+        Assert.Equal(2,finished.Packets.Count);
+        Assert.Single(pending.Packets);
+    }
+
+    [Fact]
     public void CaptureKeepsRelevantFullPayloadAndInventorySnapshots()
     {
         var trace=new ManualTradeTrace("operation-1","Alpha",123,[new Item(1,"Chest",3,15)],10);

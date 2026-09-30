@@ -69,9 +69,21 @@ public sealed class ManualTradeTrace
         {
             if(_finished)throw new InvalidOperationException("Capture already finished.");
             _finished=true;
-            return new(OperationId,Character,ProcessId,StartedAt,DateTimeOffset.UtcNow,_before,
-                afterInventory.OrderBy(x=>x.Slot).ToArray(),_beforeGold,afterGold,_packets.ToArray(),_truncated,
-                _timeline.ToArray(),_timelineTruncated);
+            return BuildResult(afterInventory,afterGold);
         }
     }
+
+    public ManualTradeResult Snapshot(IEnumerable<Item> currentInventory,long currentGold)
+    {
+        lock(_gate)
+        {
+            if(_finished)throw new InvalidOperationException("Capture already finished.");
+            return BuildResult(currentInventory,currentGold);
+        }
+    }
+
+    private ManualTradeResult BuildResult(IEnumerable<Item> inventory,long gold)=>
+        new(OperationId,Character,ProcessId,StartedAt,DateTimeOffset.UtcNow,_before,
+            inventory.OrderBy(x=>x.Slot).ToArray(),_beforeGold,gold,_packets.ToArray(),_truncated,
+            _timeline.ToArray(),_timelineTruncated);
 }

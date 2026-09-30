@@ -1,6 +1,6 @@
 # Cross-character organization: master execution plan
 
-Status: **Phases 0–1 and Cloud Tasks A/B/C accepted after correction and full validation on 2026-09-29**. Phase 4 review UI, journal, and manual finality evidence are underway. A controlled single-item manual trade established a narrow two-sided acceptance/delivery pattern. Outbound exchange remains gated by automated target and quantity proof, recipient room, and controlled live automation validation. The table below preserves the original baseline assessment; see [current handoff](../handoffs/cross-character-organization.md) for integrated state.
+Status: **Phases 0–1 and Cloud Tasks A/B/C accepted after correction and full validation on 2026-09-29**. Phase 4 has a narrow reviewed direct-transfer implementation with journal, human target and offer proof, and guarded final banking. A controlled single-item manual trade established the two-sided acceptance/delivery pattern. The automated transfer still requires a controlled low-value live test before Phase 4 can be marked validated. The table below preserves the original baseline assessment; see [current handoff](../handoffs/cross-character-organization.md) for integrated state.
 
 ## Goal and user-facing behavior
 

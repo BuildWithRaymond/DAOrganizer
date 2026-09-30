@@ -24,6 +24,38 @@ public class ManualTradeAnalyzerTests
     }
 
     [Fact]
+    public void MatchingPartialStackOfferCanBeVerifiedBeforeAcceptance()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with{Packets=sender.Packets.Take(7).ToArray(),FinishedAt=sender.Packets[6].ObservedAt};
+        recipient=recipient with{Packets=recipient.Packets.Take(2).ToArray(),
+            AfterInventory=[],FinishedAt=recipient.Packets[1].ObservedAt};
+        var offer=ManualTradeAnalyzer.AnalyzeOffer(sender,recipient);
+        Assert.True(offer.Verified);
+        Assert.Equal(2,offer.Quantity);
+        Assert.Equal(38,offer.Item?.Slot);
+        var wrong=recipient with{Packets=[recipient.Packets[0]]};
+        Assert.False(ManualTradeAnalyzer.AnalyzeOffer(sender,wrong).Verified);
+    }
+
+    [Fact]
+    public void OfferRejectsEarlyRecipientGainExtraGoldAndChangedQuantity()
+    {
+        var (sender,recipient)=PartialStack();
+        sender=sender with{Packets=sender.Packets.Take(7).ToArray()};
+        recipient=recipient with{Packets=recipient.Packets.Take(2).ToArray(),AfterInventory=[]};
+        Assert.True(ManualTradeAnalyzer.AnalyzeOffer(sender,recipient).Verified);
+        Assert.False(ManualTradeAnalyzer.AnalyzeOffer(sender,recipient with{AfterInventory=
+            [new Item(3,"Chest",2,77,0,IsStackable:true)]}).Verified);
+        Assert.False(ManualTradeAnalyzer.AnalyzeOffer(sender,recipient with{AfterGold=1}).Verified);
+        var changed=sender with{Packets=sender.Packets.Select(x=>x.Direction=="Client"&&x.Opcode==0x4A&&
+            x.PayloadHex.StartsWith("02",StringComparison.Ordinal)?
+            Client(new ClientExchangeMessage{Action=ExchangeClientActionType.AddStackableItem,
+                TargetId=202,Slot=38,Quantity=3}) with{ObservedAt=x.ObservedAt}:x).ToArray()};
+        Assert.False(ManualTradeAnalyzer.AnalyzeOffer(changed,recipient).Verified);
+    }
+
+    [Fact]
     public void LegacyCaptureWithoutOpcodeTimelineRemainsInconclusive()
     {
         var (sender,recipient)=PartialStack();

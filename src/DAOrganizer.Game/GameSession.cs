@@ -192,14 +192,22 @@ public sealed partial class GameSession:IDisposable
                     if(!Online){Online=true;Status="Reading inventory";}
                     _baseline.AppearanceSeen=true;
                     break;
-                case ServerDrawHumanObjectsMessage human when human.EntityId==_playerId&&_playerId!=0&&Name.Length>0&&human.MonsterSprite==null:
-                    var look=new CharacterAppearance(human.HeadSprite,human.FaceShape,(byte)(human.BodySprite??BodySprite.None),
-                        (byte)(human.HairColor??DyeColor.Default),(byte)(human.SkinColor??SkinColor.Default),
-                        human.ArmsSprite??0,human.ArmorSprite??0,human.OvercoatSprite??0,
-                        human.Accessory1Sprite??0,(byte)(human.Accessory1Color??DyeColor.Default),
-                        human.Accessory2Sprite??0,(byte)(human.Accessory2Color??DyeColor.Default),
-                        human.Accessory3Sprite??0,(byte)(human.Accessory3Color??DyeColor.Default));
-                    _store.Put("appearance/"+Name.ToLowerInvariant(),look);
+                case ServerDrawHumanObjectsMessage human:
+                    if(human.EntityId==_playerId&&_playerId!=0&&Name.Length>0&&human.MonsterSprite==null)
+                    {
+                        var look=new CharacterAppearance(human.HeadSprite,human.FaceShape,(byte)(human.BodySprite??BodySprite.None),
+                            (byte)(human.HairColor??DyeColor.Default),(byte)(human.SkinColor??SkinColor.Default),
+                            human.ArmsSprite??0,human.ArmorSprite??0,human.OvercoatSprite??0,
+                            human.Accessory1Sprite??0,(byte)(human.Accessory1Color??DyeColor.Default),
+                            human.Accessory2Sprite??0,(byte)(human.Accessory2Color??DyeColor.Default),
+                            human.Accessory3Sprite??0,(byte)(human.Accessory3Color??DyeColor.Default));
+                        _store.Put("appearance/"+Name.ToLowerInvariant(),look);
+                    }
+                    else if(human.EntityId!=0&&human.EntityId!=_playerId&&human.MonsterSprite==null&&
+                        !human.IsHidden&&!string.IsNullOrWhiteSpace(human.Name))
+                        _visibleTradeTargets[human.EntityId]=new(human.EntityId,human.Name,
+                            new(human.X,human.Y),MapId,DateTimeOffset.UtcNow);
+                    else _visibleTradeTargets.Remove(human.EntityId);
                     break;
                 case ServerUserReadyMessage:
                     _baseline.ControlSeen=true;_baseline.Changed(DateTimeOffset.UtcNow);_dirty=true;
@@ -219,20 +227,27 @@ public sealed partial class GameSession:IDisposable
                     _baseline.MapSeen=true;
                     _baseline.Changed(DateTimeOffset.UtcNow);_pendingWalk=null;
                     if(_homeInnPending)_homeInnMapSeen=true;
-                    MapId=map.MapId;Width=map.Width;Height=map.Height;MapName=map.Name;_creatures.Clear();Dialog=null;FieldMap=null;_pendingBank=null;BankNpcId=null;LastBankMenu=null;break;
+                    MapId=map.MapId;Width=map.Width;Height=map.Height;MapName=map.Name;_creatures.Clear();_visibleTradeTargets.Clear();Dialog=null;FieldMap=null;_pendingBank=null;BankNpcId=null;LastBankMenu=null;break;
                 case ServerUserPositionMessage position:
                     Position=new(position.X,position.Y);PositionRevision++;_pendingWalk=null;ObserveHomeInnArrival();break;
                 case ServerMoveMessage movement:
                     ObserveWalk(movement);break;
                 case ServerDrawObjectsMessage objects:
                     foreach(var creature in objects.Entities.OfType<ServerCreatureEntity>())_creatures[creature.Id]=creature;break;
-                case ServerRemoveObjectsMessage remove:_creatures.Remove(remove.EntityId);break;
+                case ServerRemoveObjectsMessage remove:_creatures.Remove(remove.EntityId);_visibleTradeTargets.Remove(remove.EntityId);break;
                 case ServerMoveObjectMessage move:
                     if(_creatures.TryGetValue(move.EntityId,out var moving))
                     {
                         moving.X=(ushort)(move.OriginX+(move.Direction==WorldDirection.Right?1:move.Direction==WorldDirection.Left?-1:0));
                         moving.Y=(ushort)(move.OriginY+(move.Direction==WorldDirection.Down?1:move.Direction==WorldDirection.Up?-1:0));
                     }
+                    if(_visibleTradeTargets.TryGetValue(move.EntityId,out var target))
+                        _visibleTradeTargets[move.EntityId]=target with
+                        {
+                            Position=new Tile(move.OriginX+(move.Direction==WorldDirection.Right?1:move.Direction==WorldDirection.Left?-1:0),
+                                move.OriginY+(move.Direction==WorldDirection.Down?1:move.Direction==WorldDirection.Up?-1:0)),
+                            ObservedAt=DateTimeOffset.UtcNow
+                        };
                     break;
                 case ServerScreenMenuMessage menu:Dialog=menu;ObserveHomeInn(menu);break;
                 case ServerPursuitMessage pursuit:ObserveHomeInn(pursuit);break;
@@ -285,7 +300,7 @@ public sealed partial class GameSession:IDisposable
     public void SetStatus(string status){Status=status;Changed?.Invoke();}
     private void ResetBaseline()
     {
-        _inventory.Clear();_equipment.Clear();_ready=false;_dirty=false;_baseline=new();
+        _inventory.Clear();_equipment.Clear();_visibleTradeTargets.Clear();_ready=false;_dirty=false;_baseline=new();
         Gold=0;Health=0;Online=false;Dialog=null;FieldMap=null;_pendingBank=null;LastBankScan=null;LastBankMenu=null;BankNpcId=null;
         _safeQuitApproved=false;_safeQuitRequested=false;
         _walkCounter=0;_playerId=0;_pendingWalk=null;PositionRevision=0;ManualMovementRevision=0;

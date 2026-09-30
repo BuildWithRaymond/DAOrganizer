@@ -22,9 +22,71 @@ public sealed record ManualTradeAnalysis(ManualTradeOutcome Outcome,string Reaso
     public bool ExplicitItemDenialObserved=>Evidence?.ExplicitItemDenialObserved==true;
 }
 
+public sealed record ManualTradeOfferAnalysis(bool Verified,string Reason,string? Sender=null,
+    string? Recipient=null,Item? Item=null,long Quantity=0);
+
 // Pure review of two bounded captures. It sends nothing and never turns a timeout/cancel into non-tradeable evidence.
 public static class ManualTradeAnalyzer
 {
+    public static ManualTradeOfferAnalysis AnalyzeOffer(ManualTradeResult first,ManualTradeResult second)
+    {
+        ManualTradeOfferAnalysis No(string reason)=>new(false,reason);
+        if(first.OperationId!=second.OperationId||first.ProcessId==second.ProcessId||
+            first.Character.Equals(second.Character,StringComparison.OrdinalIgnoreCase)||
+            first.Truncated||second.Truncated||first.TimelineTruncated||second.TimelineTruncated||
+            first.FilteredTimeline is null||second.FilteredTimeline is null||
+            first.BeforeGold!=first.AfterGold||second.BeforeGold!=second.AfterGold)
+            return No("Offer capture sessions, bounds or gold changed.");
+        Side a,b;
+        try{a=Decode(first);b=Decode(second);}
+        catch{return No("Malformed or unsupported offer packet.");}
+        if(a.Invalid||b.Invalid)return No("Unexpected packet during offer.");
+        var sender=a.Client.Count(x=>x.Message.Action==ExchangeClientActionType.BeginExchange)==1&&b.Client.Count==0?a:
+            b.Client.Count(x=>x.Message.Action==ExchangeClientActionType.BeginExchange)==1&&a.Client.Count==0?b:null;
+        if(sender is null)return No("Exactly one initiator and no recipient action are required before acceptance.");
+        var recipient=ReferenceEquals(sender,a)?b:a;
+        if(!PartnerIdentitiesMatch(sender,recipient))return No("Partner identity is not matched on both sessions.");
+        var stack=sender.Client.Where(x=>x.Message.Action==ExchangeClientActionType.AddStackableItem).ToArray();
+        var actions=stack.Length==1?
+            new[]{ExchangeClientActionType.BeginExchange,ExchangeClientActionType.AddItem,ExchangeClientActionType.AddStackableItem}:
+            new[]{ExchangeClientActionType.BeginExchange,ExchangeClientActionType.AddItem};
+        if(!sender.Client.Select(x=>x.Message.Action).SequenceEqual(actions)||stack.Length>1)
+            return No("Offer action sequence is ambiguous.");
+        var selected=sender.Client.Single(x=>x.Message.Action==ExchangeClientActionType.AddItem).Message;
+        if(selected.Slot is not byte slot||stack.Any(x=>x.Message.Slot!=slot||x.Message.Quantity is null or 0)||
+            stack.Length==1&&sender.Server.Count(x=>x.Message.Event==ExchangeServerEventType.QuantityPrompt&&x.Message.Slot==slot)!=1||
+            stack.Length==0&&sender.Server.Any(x=>x.Message.Event==ExchangeServerEventType.QuantityPrompt)||
+            recipient.Server.Any(x=>x.Message.Event==ExchangeServerEventType.QuantityPrompt))
+            return No("Source slot or quantity prompt is ambiguous.");
+        if(sender.Server.Count(x=>x.Message.Event==ExchangeServerEventType.Started)!=1||
+            recipient.Server.Count(x=>x.Message.Event==ExchangeServerEventType.Started)!=1||
+            sender.Server.Count(x=>x.Message.Event==ExchangeServerEventType.ItemAdded)!=1||
+            recipient.Server.Count(x=>x.Message.Event==ExchangeServerEventType.ItemAdded)!=1||
+            sender.Server.Any(x=>x.Message.Event is not (ExchangeServerEventType.Started or
+                ExchangeServerEventType.QuantityPrompt or ExchangeServerEventType.ItemAdded))||
+            recipient.Server.Any(x=>x.Message.Event is not (ExchangeServerEventType.Started or ExchangeServerEventType.ItemAdded)))
+            return No("Offer contains an extra exchange event.");
+        var quantity=stack.Length==1?stack[0].Message.Quantity!.Value:1;
+        var item=sender.Capture.BeforeInventory.SingleOrDefault(x=>x.Slot==slot);
+        if(item is null||item.Quantity<quantity||!OffersMatch(sender,recipient,item,quantity)||
+            !UnrelatedInventoryStable(sender.Capture,item)||
+            !sender.Capture.BeforeInventory.Where(x=>x.Slot!=slot).SequenceEqual(
+                sender.Capture.AfterInventory.Where(x=>x.Slot!=slot))||
+            !recipient.Capture.BeforeInventory.SequenceEqual(recipient.Capture.AfterInventory)||
+            recipient.InventoryAdds.Count!=0||recipient.InventoryRemoves.Count!=0)
+            return No("Offered item, recipient inventory or unrelated state changed.");
+        var sourceAfter=sender.Capture.AfterInventory.SingleOrDefault(x=>x.Slot==slot);
+        var updated=sourceAfter is not null&&sourceAfter.Quantity==item.Quantity-quantity&&
+            sender.InventoryAdds.Count==1&&sender.InventoryRemoves.Count==0&&
+            sender.InventoryAdds[0].Slot==slot&&ItemGroups.Key(ToItem(sender.InventoryAdds[0]))==ItemGroups.Key(item)&&
+            sender.InventoryAdds[0].Quantity==sourceAfter.Quantity;
+        var removed=sourceAfter is null&&quantity==item.Quantity&&
+            sender.InventoryAdds.Count==0&&sender.InventoryRemoves.Count==1&&sender.InventoryRemoves[0].Slot==slot;
+        if(!updated&&!removed)return No("Source inventory did not decrease by the offered quantity.");
+        return new(true,"Exact two-sided offer and source decrease verified.",sender.Capture.Character,
+            recipient.Capture.Character,item,quantity);
+    }
+
     public static ManualTradeAnalysis Analyze(ManualTradeResult first,ManualTradeResult second)
     {
         ManualTradeAnalysis Inconclusive(string reason,ManualTradeEvidence? evidence=null)=>
