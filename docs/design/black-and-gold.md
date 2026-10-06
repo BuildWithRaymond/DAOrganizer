@@ -1,6 +1,6 @@
 # Black & gold design direction
 
-The reference is a dense native desktop companion: near-black surfaces, antique gold details, serif headings, restrained separators and readable gameplay data. DA Organizer remains an inventory tool, with its existing game operations preserved.
+The reference is a dense native desktop companion: near-black surfaces, antique gold details, serif headings, restrained separators and readable gameplay data. DAOrganizer remains an inventory tool, with its existing game operations preserved.
 
 ## Tokens
 

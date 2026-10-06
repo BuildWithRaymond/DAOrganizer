@@ -1,34 +1,42 @@
-# Screenshot gallery
+# DAOrganizer artwork and screenshots
+
+## Launch artwork
+
+![DAOrganizer launch artwork](daorganizer-launch.png)
+
+Promotional ImageGen artwork, recovered from the original DAOrganizer generation. Screenshots below are actual app renders.
+
+## App screenshot gallery
 
 These are unedited renders of the actual Avalonia app using its fictional `--demo` collection. The headless gallery uses the same controls and styling as the desktop window. Names and quantities are fictional. Original game sprites are read from a local installation; their ownership remains with the game rights holders. No raw game assets are bundled.
 
 ## Collection
 
-![Collection](collection-v0.15.0.png)
+![Collection](collection-v0.16.0.png)
 
 ## Item ownership and rules
 
-![Item details](item-details-v0.15.0.png)
+![Item details](item-details-v0.16.0.png)
 
 ## Character inventory
 
-![Inventory](inventory-v0.15.0.png)
+![Inventory](inventory-v0.16.0.png)
 
 ## Crystal arrows first
 
-![Arrow and potion ordering](rogue-inventory-v0.15.0.png)
+![Arrow and potion ordering](rogue-inventory-v0.16.0.png)
 
 ## Compact window
 
-![Compact inventory](inventory-compact-v0.15.0.png)
+![Compact inventory](inventory-compact-v0.16.0.png)
 
 ## Account manager
 
-![Account manager](accounts-v0.15.0.png)
+![Account manager](accounts-v0.16.0.png)
 
 ## Empty search
 
-![Empty search](empty-state-v0.15.0.png)
+![Empty search](empty-state-v0.16.0.png)
 
 ## Regenerate
 

@@ -4,8 +4,11 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using System.Runtime.InteropServices;
 using DAOrganizer.Core;
 using DAOrganizer.Game;
 namespace DAOrganizer.App;
@@ -14,6 +17,8 @@ public sealed partial class MainWindow:Window
 {
     private readonly Organizer _app;
     private readonly ItemImages _images=new();
+    private CharacterPortraitRenderer? _portraitRenderer;
+    private readonly Dictionary<CharacterAppearance,WriteableBitmap?> _portraitBitmaps=[];
     public Task ArtworkReady {get;private set;}=Task.CompletedTask;
     public bool HasItemSprites=>_images.Loaded;
     private readonly StackPanel _characters=new(){Spacing=4};
@@ -31,7 +36,7 @@ public sealed partial class MainWindow:Window
     private Button? _launchButton;
     public MainWindow(Organizer app)
     {
-        _app=app;Title="DA Organizer — The Celtic Collection";Width=1280;Height=880;MinWidth=980;MinHeight=720;
+        _app=app;Title="DAOrganizer — The Celtic Collection";Width=1280;Height=880;MinWidth=980;MinHeight=720;
         if(app.IsDemo){_allAccounts=true;_location="All items";}
         WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new Grid{ColumnDefinitions=new("220,*"),RowDefinitions=new("*,Auto")};
@@ -39,7 +44,7 @@ public sealed partial class MainWindow:Window
         var brand=new StackPanel{Spacing=12,Margin=new(4,0,4,24)};
         var identity=new Grid{ColumnDefinitions=new("60,*")};identity.Children.Add(new CelticSeal{Width=52,Height=52});
         var wordmark=new StackPanel{Spacing=2,VerticalAlignment=VerticalAlignment.Center};
-        wordmark.Children.Add(new TextBlock{Text="DA Organizer",FontFamily=new("Georgia"),FontSize=18,Foreground=Brush("#F2E8D2")});
+        wordmark.Children.Add(new TextBlock{Text="DAOrganizer",FontFamily=new("Georgia"),FontSize=18,Foreground=Brush("#F2E8D2")});
         wordmark.Children.Add(new TextBlock{Text="THE COLLECTION",FontSize=8,LetterSpacing=1.4,Foreground=Brush("#D6B46A")});Grid.SetColumn(wordmark,1);identity.Children.Add(wordmark);
         brand.Children.Add(identity);brand.Children.Add(new CelticRule{Height=12,Opacity=.7});
         brand.Children.Add(new TextBlock{Text="CHARACTERS",FontSize=9,LetterSpacing=2,Foreground=Brush("#86837B"),Margin=new(8,5,0,0)});DockPanel.SetDock(brand,Dock.Top);sidebar.Children.Add(brand);
@@ -65,7 +70,7 @@ public sealed partial class MainWindow:Window
         Grid.SetRow(_tabs,2);main.Children.Add(_tabs);_toolbar.Margin=new(0,12,0,12);Grid.SetRow(_toolbar,3);main.Children.Add(_toolbar);
         Grid.SetRow(_body,4);main.Children.Add(_body);
         var statusRow=new Grid{ColumnDefinitions=new("*,Auto")};statusRow.Children.Add(_status);
-        var edition=Text(app.IsDemo?"DEMO COLLECTION  ·  FICTIONAL ACCOUNTS":"LOCAL COLLECTION  ·  v0.15",9,true);edition.LetterSpacing=1;Grid.SetColumn(edition,1);statusRow.Children.Add(edition);
+        var edition=Text(app.IsDemo?"DEMO COLLECTION  ·  FICTIONAL ACCOUNTS":"LOCAL COLLECTION  ·  v"+AppUpdates.CurrentVersion,9,true);edition.LetterSpacing=1;Grid.SetColumn(edition,1);statusRow.Children.Add(edition);
         var footer=new Border{Background=Brush("#0D0E10"),BorderBrush=Brush("#30291D"),BorderThickness=new(0,1,0,0),Padding=new(20,10),Child=statusRow};Grid.SetRow(footer,1);Grid.SetColumnSpan(footer,2);root.Children.Add(footer);Content=root;
         _timer.Tick+=(_,_)=>Refresh();_timer.Start();
         Opened+=async(_,_)=>
@@ -74,14 +79,52 @@ public sealed partial class MainWindow:Window
             if(_app.IsDemo)_status.Text="Demo collection - game actions are disabled.";
             else await Run(async()=>{await _app.LoadWorld();_banks.ItemsSource=_app.Banks();_status.Text=_app.WorldStatus;});
             await ArtworkReady;
+            await _app.Updates.Start();
+            if(_app.Updates.Automatic)_status.Text=_app.Updates.Status;
         };
-        Closing+=OnClosing;Closed+=(_,_)=>{_timer.Stop();_images.Dispose();};
+        Closing+=OnClosing;Closed+=(_,_)=>{_timer.Stop();_images.Dispose();foreach(var bitmap in _portraitBitmaps.Values)bitmap?.Dispose();};
         Refresh(true);
     }
     private async Task LoadArtwork()
     {
         try{await _images.Load(_app.ClientPath);Refresh(true);}
         catch(Exception){_status.Text="Game sprites unavailable. Choose your game installation in Settings; item names remain visible.";}
+        try
+        {
+            var directory=Path.GetDirectoryName(_app.ClientPath)!;
+            _portraitRenderer=await Task.Run(()=>new CharacterPortraitRenderer(directory));
+            foreach(var bitmap in _portraitBitmaps.Values)bitmap?.Dispose();
+            _portraitBitmaps.Clear();Refresh(true);
+        }
+        catch(Exception){_portraitRenderer=null;}
+    }
+    private Control CharacterAvatar(string name,CharacterAppearance? look)
+    {
+        WriteableBitmap? bitmap=null;
+        if(look!=null&&_portraitRenderer!=null)
+        {
+            if(!_portraitBitmaps.TryGetValue(look,out bitmap))
+            {
+                try
+                {
+                    if(_portraitRenderer.Render(look) is { } portrait)
+                    {
+                        bitmap=new(new(portrait.Width,portrait.Height),new(96,96),PixelFormat.Rgba8888,AlphaFormat.Unpremul);
+                        using var buffer=bitmap.Lock();
+                        for(var row=0;row<portrait.Height;row++)
+                            Marshal.Copy(portrait.Pixels,row*portrait.Width*4,buffer.Address+row*buffer.RowBytes,portrait.Width*4);
+                    }
+                }
+                catch(InvalidDataException){}
+                _portraitBitmaps[look]=bitmap;
+            }
+        }
+        var content=bitmap is null?(Control)new TextBlock{Text=name[..1].ToUpperInvariant(),FontFamily=new("Georgia"),FontSize=15,
+            Foreground=Brush("#D6B46A"),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}
+            :new Image{Source=bitmap,Stretch=Stretch.UniformToFill};
+        if(content is Image image)RenderOptions.SetBitmapInterpolationMode(image,BitmapInterpolationMode.None);
+        return new Border{Width=30,Height=30,Background=Brush("#29251D"),BorderBrush=Brush("#5E4D2E"),BorderThickness=new(1),
+            CornerRadius=new(15),ClipToBounds=true,Child=content};
     }
     private Control ItemArtwork(Item item,double size)
     {
@@ -109,7 +152,8 @@ public sealed partial class MainWindow:Window
     {
         if(this.GetVisualDescendants().OfType<SlotButton>().Any(x=>x.GestureActive))return;
         var characters=_app.Store.Characters();
-        var key=_allAccounts+string.Join('|',characters.Select(x=>x.Name+(_app.Session(x.Name)!=null?"+":"-")));
+        var looks=characters.ToDictionary(x=>x.Name,x=>_app.Store.Get<CharacterAppearance>("appearance/"+x.Name.ToLowerInvariant()));
+        var key=_allAccounts+string.Join('|',characters.Select(x=>x.Name+(_app.Session(x.Name)!=null?"+":"-")+looks[x.Name]));
         if(_selected==null&&characters.Count>0)_selected=characters[0].Name;
         if(force||key!=_characterKey)
         {
@@ -121,7 +165,7 @@ public sealed partial class MainWindow:Window
             {
                 var online=_app.Session(character.Name)!=null;
                 var panel=new Grid{ColumnDefinitions=new("34,*")};
-                panel.Children.Add(new Border{Width=25,Height=29,Background=Brush("#29251D"),BorderBrush=Brush("#5E4D2E"),BorderThickness=new(1),CornerRadius=new(4),Child=new TextBlock{Text=character.Name[..1].ToUpperInvariant(),FontFamily=new("Georgia"),FontSize=15,Foreground=Brush("#D6B46A"),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center}});
+                panel.Children.Add(CharacterAvatar(character.Name,looks[character.Name]));
                 var info=new StackPanel{Spacing=4};info.Children.Add(Text(character.Name,14));info.Children.Add(Text(online?"●  Connected":"○  Saved collection",10,true));Grid.SetColumn(info,1);panel.Children.Add(info);
                 var button=Button("",()=>{_allAccounts=false;_selected=character.Name;if(_location=="All items")_location="Inventory";_search.Text="";Refresh(true);return Task.CompletedTask;},"character");button.Tag=character.Name;button.Content=panel;
                 button.HorizontalAlignment=HorizontalAlignment.Stretch;button.HorizontalContentAlignment=HorizontalAlignment.Left;

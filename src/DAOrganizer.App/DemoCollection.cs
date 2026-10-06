@@ -76,6 +76,8 @@ public static class DemoCollection
             app.Store.SaveSnapshot(names[n],"Bank",[
                 Item(1,"Uncut Beryl",30+n*12),Item(2,"Uncut Ruby",20+n*4),Item(3,"Komadium",60+n*10),Item(4,"Red Potion",100+n*20),
                 Item(5,weapons[(n+1)%6],1),Item(6,armor[(n+1)%6],1),Item(7,"Archery Book",1),Item(8,"Double Ability Rune",5),Item(9,"Andor Chest",3),Item(10,"Rambutan",15)],true);
+            app.Store.Put("appearance/"+names[n].ToLowerInvariant(),new CharacterAppearance(
+                (ushort)(n+1),1,(byte)(n%2==0?0x20:0x10),0,0,0,(ushort)(n+1),0,0,0,0,0,0,0));
             app.Store.Put("gold/"+names[n].ToLowerInvariant(),(uint)(1268000+n*58300));
             app.Store.Put("lastUpdate/"+names[n].ToLowerInvariant(),new AccountProgress(names[n],"Complete","Demo collection captured"));
             app.Accounts.SetUpdate(names[n],n<3);

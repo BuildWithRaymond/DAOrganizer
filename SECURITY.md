@@ -14,6 +14,6 @@ The project is maintained on a best-effort basis; no response deadline is guaran
 
 ## Relevant boundaries
 
-DA Organizer runs on your computer and observes game traffic through a local proxy for clients it launches. Optional saved passwords use Windows Credential Manager. Local snapshots and configuration are stored in SQLite. Demo mode uses an isolated in-memory database and blocks live operations.
+DAOrganizer runs on your computer and observes game traffic through a local proxy for clients it launches. Optional saved passwords use Windows Credential Manager. Local snapshots and configuration are stored in SQLite. Demo mode uses an isolated in-memory database and blocks live operations.
 
 Credential disclosure, unintended network exposure, unsafe client launch/input and bypasses of item-operation safeguards are useful reports. Ordinary category mistakes, unsupported game versions and cosmetic problems belong in public bug reports after removing personal data.

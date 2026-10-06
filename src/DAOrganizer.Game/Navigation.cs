@@ -22,7 +22,7 @@ public sealed class Navigation(WorldGraph world,string gameDirectory)
             CheckControl(session,token);
             if(session.MapId!=edge.From)throw new InvalidOperationException("Unexpected map transition. Scan stopped.");
             session.SetStatus($"Walking to {world.Maps[edge.To].Name}");
-            await Walk(session,new(edge.X,edge.Y),true,token);
+            await WalkToPortal(session,edge,token);
             if(edge.WorldMap)
             {
                 await GameSession.WaitUntil(()=>session.FieldMap!=null,TimeSpan.FromSeconds(5),token);
@@ -47,6 +47,48 @@ public sealed class Navigation(WorldGraph world,string gameDirectory)
             }
         }
         CheckControl(session,token);await session.ScanNearbyBank(bank.NpcName,token);
+    }
+    private async Task WalkToPortal(GameSession session,Portal planned,CancellationToken token)
+    {
+        // WorldLogs can record several entrances to the same transition. A map-level
+        // route chooses one without checking its tile path or current occupants.
+        IEnumerable<Portal> alternatives=world.Maps.TryGetValue(planned.From,out var map)
+            ?map.Portals.Where(x=>x.From==planned.From&&x.To==planned.To&&x.WorldMap==planned.WorldMap)
+            :[];
+        var choices=new[]{planned}.Concat(alternatives
+            .OrderBy(x=>Math.Abs(x.X-session.Position.X)+Math.Abs(x.Y-session.Position.Y)))
+            .DistinctBy(x=>new Tile(x.X,x.Y)).ToArray();
+        foreach(var portal in choices)
+        {
+            CheckControl(session,token);
+            if(session.MapId!=planned.From)throw new InvalidOperationException("Unexpected map transition. Travel stopped.");
+            try{await Walk(session,new(portal.X,portal.Y),true,token);return;}
+            // Only a proven lack of a tile path permits another entrance. A timeout,
+            // cancellation or uncertain server response must stop without another step.
+            catch(InvalidOperationException ex)when(ex.Message.StartsWith("No clear tile path",StringComparison.Ordinal)){}
+        }
+        var reason=$"No clear tile path from {session.MapName} ({session.MapId}) to {world.Maps[planned.To].Name}. "+
+            $"Tried {choices.Length} recorded exit{(choices.Length==1?"":"s")} (first at {planned.X},{planned.Y}). Clear the obstruction before continuing.";
+        session.SetStatus(reason);
+        throw new InvalidOperationException(reason);
+    }
+    public async Task Meet(GameSession moving,GameSession stationary,CancellationToken token)
+    {
+        if(!moving.Ready||!stationary.Ready||moving.MapId!=stationary.MapId)
+            throw new InvalidOperationException("Both characters must be ready on the destination bank map.");
+        if(Math.Abs(moving.Position.X-stationary.Position.X)+Math.Abs(moving.Position.Y-stationary.Position.Y)==1)return;
+        var occupied=moving.Occupied();
+        var choices=new[]{new Tile(stationary.Position.X,stationary.Position.Y+1),
+            new Tile(stationary.Position.X-1,stationary.Position.Y),new Tile(stationary.Position.X+1,stationary.Position.Y),
+            new Tile(stationary.Position.X,stationary.Position.Y-1)}
+            .Where(x=>x.X>=0&&x.Y>=0&&x.X<moving.Width&&x.Y<moving.Height&&!occupied.Contains(x))
+            .OrderBy(x=>Math.Abs(x.X-moving.Position.X)+Math.Abs(x.Y-moving.Position.Y)).ToArray();
+        foreach(var point in choices)
+        {
+            try{await Walk(moving,point,false,token);return;}
+            catch(InvalidOperationException ex)when(ex.Message.StartsWith("No clear tile path",StringComparison.Ordinal)){}
+        }
+        throw new InvalidOperationException("No clear adjacent tile is available for the exchange.");
     }
     private async Task Walk(GameSession session,Tile goal,bool allowExit,CancellationToken token)
     {

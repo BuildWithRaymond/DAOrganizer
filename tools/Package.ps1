@@ -4,17 +4,18 @@ $projectRoot=Split-Path $PSScriptRoot -Parent
 $publishPath=Join-Path $projectRoot $Output
 if (-not $SkipBuild) {
     $env:AVALONIA_TELEMETRY_OPTOUT='1'
-    dotnet publish (Join-Path $projectRoot 'src\DAOrganizer.App') -c Release -r win-x64 --self-contained true -m:1 -p:UsedAvaloniaProducts= -o $publishPath
+    dotnet publish (Join-Path $projectRoot 'src\DAOrganizer.App') -c Release -r win-x64 --self-contained true -m:1 -p:UsedAvaloniaProducts= -p:DebugType=None -p:DebugSymbols=false -o $publishPath
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 }
 $licensePath=Join-Path $publishPath 'licenses'
 New-Item -ItemType Directory -Force -Path $licensePath | Out-Null
-foreach ($name in @('README.md','LICENSE','CHANGELOG.md','CONTRIBUTING.md','SECURITY.md','CODE_OF_CONDUCT.md','THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('LICENSE','CHANGELOG.md','THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $publishPath
 }
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\PACKAGE_README.md') -Destination (Join-Path $publishPath 'README.md')
 $docsPath=Join-Path $publishPath 'docs'
 New-Item -ItemType Directory -Force -Path $docsPath | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $projectRoot 'docs') | Copy-Item -Destination $docsPath -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\GETTING_STARTED.md') -Destination $docsPath
 Get-ChildItem -LiteralPath (Join-Path $projectRoot 'docs\licenses') -File | Copy-Item -Destination $licensePath
 $assets=Get-Content (Join-Path $projectRoot 'src\DAOrganizer.App\obj\project.assets.json') -Raw | ConvertFrom-Json
 $packageRoots=@($assets.packageFolders.PSObject.Properties.Name)

@@ -49,6 +49,10 @@ public sealed partial class GameSession
         try
         {
             await WaitUntil(()=>LastBankScan!=previous,TimeSpan.FromSeconds(12),token);
+            // A completed bank list is an NPC popup in the native client. Close only the menu
+            // returned by this request; a silent empty-bank scan has no popup to close.
+            lock(_gate)
+                if(_bankRequested==requested&&LastBankMenu?.NpcId==npc.Id)CloseBankPopup(npc.Id);
         }
         catch(TimeoutException ex){throw new TimeoutException("Hax bank list did not complete. Saved contents retained.",ex);}
         finally

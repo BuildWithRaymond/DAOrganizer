@@ -110,6 +110,11 @@ public sealed partial class MainWindow
         panel.Children.Add(Text(group.Item.Name,21));panel.Children.Add(Text($"{group.Quantity:N0} total · {ItemCategories.Label(group.Item)}",13,true));
         panel.Children.Add(new CelticRule{Height=10,Opacity=.6});
         panel.Children.Add(RuleEditor(group.Item));
+        var consolidate=Button("Consolidate to bank",()=>ConsolidateItem(group),"primary");
+        consolidate.IsEnabled=!_app.IsDemo&&_app.Store.Search("").Where(x=>ItemGroups.Key(x.Item)==group.Key)
+            .Select(x=>x.Character).Distinct(StringComparer.OrdinalIgnoreCase).Count()>1;
+        panel.Children.Add(consolidate);
+        if(_app.IsDemo)panel.Children.Add(Text("Consolidation is available in your live profile.",11,true));
         panel.Children.Add(Text("WHO HAS IT",11,true));
         foreach(var owner in group.Owners)
         {
@@ -119,6 +124,93 @@ public sealed partial class MainWindow
             line.Children.Add(description);AddCell(line,Text($"×{owner.Item.Quantity:N0}",14),1);panel.Children.Add(line);
         }
         return new Border{Background=Brush("#131416"),BorderBrush=Brush("#78633B"),BorderThickness=new(1,0,0,0),Child=new ScrollViewer{Content=panel,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled}};
+    }
+    private async Task ConsolidateItem(ItemGroup group)
+    {
+        if(_app.Busy)throw new InvalidOperationException("Stop the current operation first.");
+        var characters=_app.Store.Characters().Select(x=>x.Name).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        var window=DialogWindow("Consolidate to bank",620);var panel=DialogPanel();
+        panel.Children.Add(Text("Consolidate to one bank",22));
+        panel.Children.Add(Text(group.Item.Name,17));
+        panel.Children.Add(Text("Choose the character whose bank should hold every eligible copy. DAOrganizer will handle login, travel, exchange, banking, and verification.",12,true));
+        var destination=new ComboBox{ItemsSource=characters,Width=260,PlaceholderText="Destination character"};
+        var preferred=_app.Store.GetItemOverride(group.Item)?.DestinationCharacter;
+        destination.SelectedItem=characters.FirstOrDefault(x=>x.Equals(preferred,StringComparison.OrdinalIgnoreCase))??
+            group.Owners.Where(x=>x.Location=="Bank").GroupBy(x=>x.Character,StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(x=>x.Sum(y=>y.Item.Quantity)).Select(x=>x.Key).FirstOrDefault();
+        panel.Children.Add(destination);
+        var summaryPanel=new StackPanel{Spacing=5};panel.Children.Add(summaryPanel);
+        ConsolidationSummary? summary=null;
+        var confirm=new Button{Content="Consolidate",IsEnabled=false};confirm.Classes.Add("primary");
+        void RenderSummary()
+        {
+            summaryPanel.Children.Clear();summary=null;confirm.IsEnabled=false;
+            if(destination.SelectedItem is not string chosen)return;
+            summary=_app.BuildConsolidationSummary(group.Item,chosen);
+            summaryPanel.Children.Add(Text($"Destination bank: {chosen} · currently {summary.DestinationBankQuantity:N0}",14));
+            summaryPanel.Children.Add(Text("Sources",11,true));
+            foreach(var source in summary.Sources)
+            {
+                summaryPanel.Children.Add(Text($"{source.Character}: {source.EligibleQuantity:N0} eligible"+
+                    (source.ProtectedQuantity>0?$" · {source.ProtectedQuantity:N0} protected and staying put":""),12));
+            }
+            summaryPanel.Children.Add(Text($"Total to move: {summary.EligibleQuantity:N0} {summary.Item.Name}",14));
+            if(summary.Blocker is { } blocker)summaryPanel.Children.Add(Text("Cannot start: "+blocker,12,true));
+            else summaryPanel.Children.Add(Text("After confirmation this runs hands off. If any result is uncertain, it stops without retrying and shows the last verified holder.",11,true));
+            confirm.IsEnabled=summary.CanStart;
+        }
+        destination.SelectionChanged+=(_,_)=>RenderSummary();RenderSummary();
+        var accepted=false;confirm.Click+=(_,_)=>{accepted=true;window.Close();};
+        var cancel=new Button{Content="Cancel"};cancel.Click+=(_,_)=>window.Close();
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,Spacing=8};actions.Children.Add(confirm);actions.Children.Add(cancel);panel.Children.Add(actions);
+        window.Content=panel;await window.ShowDialog(this);
+        if(!accepted||summary is null)return;
+        await ShowConsolidationProgress(summary);
+    }
+
+    private async Task ShowConsolidationProgress(ConsolidationSummary summary)
+    {
+        var window=DialogWindow("Consolidating "+summary.Item.Name,620);var panel=DialogPanel();
+        panel.Children.Add(Text("Consolidating to "+summary.DestinationCharacter+"'s bank",22));
+        var character=Text("Preparing",15);var action=Text("Preflight complete",13,true);
+        var completed=Text($"0 of {summary.EligibleQuantity:N0} transfers verified",13);
+        var blocker=Text("",12,true);panel.Children.Add(character);panel.Children.Add(action);panel.Children.Add(completed);panel.Children.Add(blocker);
+        var ended=false;
+        var stop=Button("Stop safely",()=>
+        {
+            if(!ended)_app.Stop();
+            else
+            {
+                var holder=_app.ConsolidationStatus?.LastVerifiedHolder;
+                window.Close();
+                if(!string.IsNullOrWhiteSpace(holder))
+                {
+                    _allAccounts=false;_selected=holder;_location="Inventory";_search.Text="";Refresh(true);
+                }
+            }
+            return Task.CompletedTask;
+        },"danger");panel.Children.Add(stop);
+        void Update(ConsolidationProgress progress)=>Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            character.Text="Current character: "+progress.CurrentCharacter;
+            action.Text="Current action: "+progress.CurrentAction;
+            completed.Text=$"{progress.CompletedTransfers:N0} of {progress.TotalTransfers:N0} transfers verified";
+            blocker.Text=progress.Blocker is null?"":$"Blocked: {progress.Blocker}\nLast verified holder: {progress.LastVerifiedHolder}";
+            if(progress.Finished)stop.Content="Close";
+        });
+        _app.ConsolidationChanged+=Update;window.Content=panel;window.Show(this);
+        try
+        {
+            await _app.RunOperation(t=>_app.ConsolidateToBank(summary.Item,summary.DestinationCharacter,t));
+        }
+        catch(OperationCanceledException){/* Progress already identifies the safe stop. */}
+        catch(Exception){/* The progress view is the single player-facing blocker. */}
+        finally
+        {
+            _app.ConsolidationChanged-=Update;ended=true;
+            stop.Content=_app.ConsolidationStatus?.Blocker is null?"Close":"Inspect last verified holder";
+            stop.IsEnabled=true;
+        }
     }
     private Control RuleEditor(Item item)
     {

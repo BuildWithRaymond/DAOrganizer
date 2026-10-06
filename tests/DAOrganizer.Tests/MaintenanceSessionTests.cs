@@ -149,11 +149,69 @@ public class MaintenanceSessionTests
         using var game=new Replay();game.Npc();
         game.OnSent=packet=>
         {
-            Assert.Equal(ClientCommand.Merchant,packet.Command);Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},packet.Data);
-            game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+            if(packet.Command==ClientCommand.Merchant)
+            {
+                Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},packet.Data);
+                game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+            }
+            else
+            {
+                Assert.Equal(ClientCommand.Pursuit,packet.Command);
+                Assert.Equal(new byte[]{1,0,0,0,42,0,0,0,1},packet.Data);
+            }
         };
-        await game.Session.ScanNearbyBank(null,default);Assert.Single(game.Sent);
+        await game.Session.ScanNearbyBank(null,default);Assert.Equal(2,game.Sent.Count);
         Assert.Equal(12,Assert.Single(game.Session.BankItems()).Quantity);Assert.NotNull(game.Session.LastBankScan);
+    }
+    [Fact]
+    public async Task ApprovedWithdrawalCanUseTheSameScannedVisibleNpcWithoutAdjacency()
+    {
+        using var game=new Replay();game.Npc(x:15);game.Set("_ready",true);
+        var withdrawing=false;
+        game.OnSent=packet=>
+        {
+            if(packet.Command==ClientCommand.Merchant)
+            {
+                var request=(ClientMerchantMessage)ClientMessageFactory.Default.Create(packet)!;
+                Assert.Equal(42u,request.EntityId);
+                if(request.PursuitId==0x45)
+                    game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,
+                        MenuType=DialogMenuType.ItemChoices,PursuitId=86,
+                        ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+                else {Assert.Equal((ushort)0x57,request.PursuitId);withdrawing=true;}
+            }
+            else if(packet.Command==ClientCommand.Pursuit&&withdrawing)game.Add(5,1);
+        };
+        await game.Session.ScanNearbyBank(null,default);
+        var item=Assert.Single(game.Session.BankItems());
+        var carried=await game.Session.WithdrawApprovedTransferOne(item,game.Session.LastBankScan!.Value,default);
+        Assert.True(OrganizationPlanContract.MatchesObservedItem(Assert.Single(game.Session.Inventory()),item));
+        Assert.NotNull(carried);
+        Assert.Equal(new[]{ClientCommand.Merchant,ClientCommand.Pursuit,ClientCommand.Merchant,ClientCommand.Pursuit},
+            game.Sent.Select(x=>x.Command));
+    }
+    [Fact]
+    public async Task ApprovedDepositUsesTheScannedVisibleNpcWithoutAdjacency()
+    {
+        using var game=new Replay();game.Npc(x:15);game.Add(5,1);game.Set("_ready",true);
+        game.OnSent=packet=>
+        {
+            if(packet.Command!=ClientCommand.Merchant)return;
+            var request=(ClientMerchantMessage)ClientMessageFactory.Default.Create(packet)!;
+            Assert.Equal(42u,request.EntityId);
+            if(request.PursuitId==0x45)
+                game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,
+                    MenuType=DialogMenuType.ItemChoices,PursuitId=86,
+                    ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+            else
+            {
+                Assert.Equal((ushort)0x53,request.PursuitId);
+                game.Receive(ServerCommand.RemoveInventory,new ServerRemoveInventoryMessage{Slot=5});
+            }
+        };
+        await game.Session.ScanNearbyBank(null,default);
+        Assert.True(await game.Session.DepositApprovedTransfer(Assert.Single(game.Session.Inventory()),1,default));
+        Assert.Empty(game.Session.Inventory());
     }
     [Fact]
     public async Task AccountBankRefreshAtInnNeedsNoWorldLogsOrWalking()
@@ -162,12 +220,15 @@ public class MaintenanceSessionTests
         using var app=new DAOrganizer.App.Organizer(Path.Combine(Path.GetTempPath(),"DAOrganizer-tests",Guid.NewGuid().ToString("N")));
         game.OnSent=packet=>
         {
-            Assert.Equal(ClientCommand.Merchant,packet.Command);
-            Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},packet.Data);
-            game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+            if(packet.Command==ClientCommand.Merchant)
+            {
+                Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},packet.Data);
+                game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[new(){Name="Emerald",Sprite=15,Price=12,Description=""}]});
+            }
+            else Assert.Equal(ClientCommand.Pursuit,packet.Command);
         };
         await app.RefreshBank(game.Session,true,default);
-        Assert.Single(game.Sent);Assert.Equal(12,Assert.Single(game.Session.BankItems()).Quantity);
+        Assert.Equal(2,game.Sent.Count);Assert.Equal(12,Assert.Single(game.Session.BankItems()).Quantity);
         Assert.Null(game.Store.Get<string>("banker/"+game.Session.MapId));
     }
 
@@ -177,9 +238,9 @@ public class MaintenanceSessionTests
         using var game=new Replay();game.Npc("Innkeeper");game.Add(5,2);game.Set("_ready",true);
         using var app=new DAOrganizer.App.Organizer(Path.Combine(Path.GetTempPath(),"DAOrganizer-tests",Guid.NewGuid().ToString("N")));
         app.Rules.Set(Assert.Single(game.Session.Inventory()),ItemAction.AutoDeposit);
-        game.OnSent=packet=>game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[]});
+        game.OnSent=packet=>{if(packet.Command==ClientCommand.Merchant)game.Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{EntityId=42,MenuType=DialogMenuType.ItemChoices,PursuitId=86,ItemChoices=[]});};
         var error=await Assert.ThrowsAsync<InvalidOperationException>(()=>app.RefreshBank(game.Session,true,default));
-        Assert.Contains("WorldLogs",error.Message);Assert.Single(game.Sent);
+        Assert.Contains("WorldLogs",error.Message);Assert.Equal(2,game.Sent.Count);
         Assert.Equal(new byte[]{1,0,0,0,42,0,0x45},game.Sent[0].Data);
     }
 
@@ -327,7 +388,7 @@ public class MaintenanceSessionTests
             Receive(ServerCommand.UserAppearance,new ServerUserAppearanceMessage{UserId=10});
             Receive(ServerCommand.UserPosition,new ServerUserPositionMessage{X=10,Y=12});
         }
-        public void Npc(string name="Banker")=>Receive(ServerCommand.DrawObjects,new ServerDrawObjectsMessage{Entities=[new ServerCreatureEntity{Id=42,X=10,Y=12,CreatureType=CreatureType.Mundane,Name=name}]});
+        public void Npc(string name="Banker",ushort x=10,ushort y=12)=>Receive(ServerCommand.DrawObjects,new ServerDrawObjectsMessage{Entities=[new ServerCreatureEntity{Id=42,X=x,Y=y,CreatureType=CreatureType.Mundane,Name=name}]});
         public void StartBank()
         {
             Receive(ServerCommand.ScreenMenu,new ServerScreenMenuMessage{MenuType=DialogMenuType.Menu,EntityId=42,MenuChoices=[new(){Text="Withdraw Items",PursuitId=69}]});

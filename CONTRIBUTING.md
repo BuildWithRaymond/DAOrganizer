@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve DA Organizer. Small, focused changes are easiest to review.
+Thanks for helping improve DAOrganizer. Small, focused changes are easiest to review.
 
 ## Set up
 
@@ -23,7 +23,7 @@ Category corrections should include an item name, the proposed category/family a
 
 ## Files and privacy
 
-- Do not commit account databases, passwords, packet captures, WorldLogs, game executables, game sprites or build output.
+- Do not commit account databases, passwords, packet captures, raw WorldLogs, game executables, game sprites or build output. The maintained, route-only bundle under `src/DAOrganizer.Core/Resources` is the explicit exception; preserve its field allowlist and provenance.
 - Do not include personal account names or file paths in screenshots or issues.
 - Keep upstream licenses and attribution when changing vendored code.
 - Keep documentation and release notes current when visible behavior changes.

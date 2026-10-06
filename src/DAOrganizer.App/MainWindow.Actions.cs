@@ -47,9 +47,10 @@ public sealed partial class MainWindow
     private async Task Settings()
     {
         var window=DialogWindow("Settings",630);var panel=DialogPanel();
-        var executable=new TextBox{Text=_app.ClientPath};var world=new TextBox{Text=_app.WorldLogsPath};
+        var executable=new TextBox{Text=_app.ClientPath};var world=new TextBox{Text=_app.WorldLogsPath,Watermark="Use bundled routes"};
         panel.Children.Add(Text("Dark Ages executable",12,true));panel.Children.Add(executable);
-        panel.Children.Add(Text("WorldLogs folder",12,true));panel.Children.Add(world);
+        panel.Children.Add(Text("Custom routes folder (optional)",12,true));panel.Children.Add(world);
+        panel.Children.Add(Text("WorldLogs routes are included. Leave this blank to use them; an unavailable old folder also falls back to bundled routes.",12,true));
         panel.Children.Add(Text("Travel uses walking, portals, and world maps and continues in the background. Stop cancels a trip; Escape also stops travel while the game is focused.",12,true));
         panel.Children.Add(Text("Database: "+_app.DataDirectory,12,true));
         panel.Children.Add(Button("Save settings",async()=>
@@ -58,7 +59,40 @@ public sealed partial class MainWindow
             if(_app.Busy)throw new InvalidOperationException("Stop the current action before changing settings.");
             _app.ClientPath=executable.Text?.Trim()??"";_app.WorldLogsPath=world.Text?.Trim()??"";
             _app.SaveSettings();await LoadArtwork();await _app.LoadWorld();_banks.ItemsSource=_app.Banks();window.Close();_status.Text=_app.WorldStatus;
-        },"primary"));window.Content=panel;await window.ShowDialog(this);
+        },"primary"));
+        panel.Children.Add(new CelticRule{Height=12,Opacity=.7});
+        panel.Children.Add(Text("DAOrganizer "+AppUpdates.CurrentVersion+" · Updates",16));
+        var automatic=new CheckBox{Content="Automatically download and install updates on safe exit",IsChecked=_app.Updates.Automatic,IsEnabled=_app.Updates.Available};
+        automatic.IsCheckedChanged+=(_,_)=>{if(automatic.IsEnabled)_app.Updates.Automatic=automatic.IsChecked==true;};
+        panel.Children.Add(automatic);
+        panel.Children.Add(Text("Updates come from GitHub Releases. Finish current actions and close organizer-launched game clients before installing. Your collection and saved logins stay in place.",12,true));
+        var updateStatus=Text("",12,true);updateStatus.TextWrapping=TextWrapping.Wrap;panel.Children.Add(updateStatus);
+        var actions=new WrapPanel{Orientation=Orientation.Horizontal,ItemSpacing=8,LineSpacing=6};
+        var check=Button("Check for updates",()=>_app.Updates.Check(),"quiet");
+        var download=Button("Download update",()=>_app.Updates.Download(),"quiet");
+        var install=Button("Install update and exit",()=>
+        {
+            _app.Updates.RequestInstall(_app.Busy,_app.HasOpenClients);
+            _allowClose=true;window.Close();Close();return Task.CompletedTask;
+        },"primary");
+        var releases=Button("Open releases",()=>
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppUpdates.RepositoryUrl+"/releases/latest"){UseShellExecute=true});
+            return Task.CompletedTask;
+        },"quiet");
+        foreach(var button in new[]{check,download,install,releases})actions.Children.Add(button);
+        panel.Children.Add(actions);
+        void RefreshUpdates()
+        {
+            updateStatus.Text=_app.Updates.Available?_app.Updates.Status:_app.IsDemo?"Updates are disabled in demo mode.":"This source build or older ZIP cannot update itself. Get the latest installer or portable package from Releases.";
+            check.IsEnabled=_app.Updates.Available&&!_app.Updates.Working;
+            download.IsEnabled=check.IsEnabled&&_app.Updates.AvailableVersion!=null;
+            install.IsEnabled=check.IsEnabled&&_app.Updates.PendingVersion!=null&&!_app.Busy&&!_app.HasOpenClients;
+        }
+        void UpdateChanged()=>Avalonia.Threading.Dispatcher.UIThread.Post(RefreshUpdates);
+        _app.Updates.Changed+=UpdateChanged;
+        window.Closed+=(_,_)=>_app.Updates.Changed-=UpdateChanged;
+        RefreshUpdates();window.MaxHeight=680;window.Content=new ScrollViewer{Content=panel};await window.ShowDialog(this);
     }
     private async Task Sort(bool category)
     {
@@ -103,7 +137,7 @@ public sealed partial class MainWindow
     private async Task ScanBank()
     {
         var session=RequireSession();
-        if(_app.World==null)throw new InvalidOperationException("Load WorldLogs in Settings first.");
+        if(_app.World==null)throw new InvalidOperationException("Bank routes are unavailable. Reopen the app to load bundled routes, or check the optional custom folder in Settings.");
         if(_banks.SelectedItem is not BankDestination bank)throw new InvalidOperationException("Choose a bank destination first.");
         var routes=_app.World.Route(session.MapId,bank.MapId);
         var window=DialogWindow("Travel to bank",460);var panel=DialogPanel();
@@ -120,11 +154,26 @@ public sealed partial class MainWindow
         var window=DialogWindow(item.Name,440);var panel=DialogPanel();
         panel.Children.Add(Text(item.Name,22));panel.Children.Add(Text($"Slot {item.Slot} · Quantity {item.Quantity:N0}",14));
         if(item.MaxDurability is >0)panel.Children.Add(Text($"Durability {item.Durability:N0} / {item.MaxDurability:N0}",13,true));
-        panel.Children.Add(Text("Drop / trade: unknown. Inventory data does not include this permission.",12,true));
+        var metadata=_app.Store.GetItemMetadata(item);
+        var evidence=_app.Store.TradeEvidence(item);
+        panel.Children.Add(Text($"Trade: {metadata?.Tradeability.ToString()??evidence.State.ToString()} (local verified {evidence.Successes} success, {evidence.ExplicitRejections} rejection).",12,true));
         panel.Children.Add(RuleEditor(item));
         panel.Children.Add(Text("Category",12,true));var category=new TextBox{Text=item.Category};panel.Children.Add(category);
-        panel.Children.Add(Text($"Group: {ItemCategories.Family(item)}. Automatic categories use Vorlof references, item names and observed equipment. Enter a category here to override it for this item name.",12,true));
-        panel.Children.Add(Button("Save category",()=>{_app.Store.Put("category/"+item.Name.ToLowerInvariant(),string.IsNullOrWhiteSpace(category.Text)?"Other":category.Text.Trim());window.Close();return Task.CompletedTask;},"primary"));
+        panel.Children.Add(Text($"Group: {ItemCategories.Family(item)}. Set an exact-item category override here.",12,true));
+        var characters=_app.Store.Characters().Select(x=>x.Name).ToArray();
+        var preference=_app.Store.GetItemOverride(item);
+        panel.Children.Add(Text("Preferred storage character",12,true));
+        var holder=new ComboBox{ItemsSource=new[]{"No preference"}.Concat(characters).ToArray(),SelectedItem=preference?.DestinationCharacter??"No preference"};
+        panel.Children.Add(holder);
+        var neverMove=new CheckBox{Content="Never move this item between characters",IsChecked=preference?.NeverMove??false};
+        panel.Children.Add(neverMove);
+        panel.Children.Add(Button("Save item preferences",()=>
+        {
+            var destination=holder.SelectedItem as string;
+            _app.Store.SetItemOverride(item,new ItemOverride(string.IsNullOrWhiteSpace(category.Text)?null:category.Text.Trim(),
+                destination=="No preference"?null:destination,neverMove.IsChecked==true));
+            window.Close();Refresh(true);return Task.CompletedTask;
+        },"primary"));
         window.Content=panel;await window.ShowDialog(this);
     }
     private async Task Message(string title,string message)

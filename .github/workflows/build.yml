@@ -28,13 +28,15 @@ jobs:
         run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/ui-checks
       - name: Demo isolation and screenshots
         run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/gallery --gallery
-      - name: Package Windows app
-        run: ./tools/Package.ps1 -Output artifacts/DAOrganizer
+      - name: Test release helper
+        run: dotnet run --project tools/DAOrganizer.Release -c Release -- self-test
+      - name: Package Windows app and update feed
+        run: ./tools/Build-Release.ps1
       - name: Upload portable build
         uses: actions/upload-artifact@v7
         with:
           name: DAOrganizer-win-x64
-          path: artifacts/DAOrganizer/
+          path: artifacts/release/
           if-no-files-found: error
       - name: Upload verification evidence
         if: always()

@@ -15,6 +15,8 @@ public class ServerAddInventoryMessage : ServerMessage
     public bool IsStackable { get; set; }
     public uint Durability { get; set; }
     public uint MaxDurability { get; set; }
+    // Preserve captured extension bytes without assigning an unverified meaning.
+    public byte[] TrailingData { get; set; } = [];
 
     public override void Deserialize(NetworkPacketReader reader)
     {
@@ -28,6 +30,7 @@ public class ServerAddInventoryMessage : ServerMessage
         IsStackable = reader.ReadBoolean();
         MaxDurability = reader.ReadUInt32();
         Durability = reader.ReadUInt32();
+        TrailingData = reader.ReadBytes(reader.Remaining);
     }
 
     public override void Serialize(ref NetworkPacketBuilder builder)
@@ -44,5 +47,6 @@ public class ServerAddInventoryMessage : ServerMessage
         builder.AppendBoolean(IsStackable);
         builder.AppendUInt32(MaxDurability);
         builder.AppendUInt32(Durability);
+        builder.AppendBytes(TrailingData);
     }
 }

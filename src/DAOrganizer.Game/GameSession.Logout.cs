@@ -10,6 +10,20 @@ public sealed partial class GameSession
     private bool _safeQuitApproved;
     private bool _safeQuitRequested;
     private long _quitRequestRevision;
+    public bool HasOpenClient
+    {
+        get
+        {
+            if(ProcessId<=0)return false;
+            try
+            {
+                using var process=Process.GetProcessById(ProcessId);
+                return !process.HasExited&&process.StartTime==_ownedStarted;
+            }
+            catch(ArgumentException){return false;}
+            catch(System.ComponentModel.Win32Exception){return true;}
+        }
+    }
     public async Task SafeLogout(CancellationToken token)
     {
         if(!Online||_safeQuitApproved)return;

@@ -38,6 +38,12 @@ void Click(string label)
     button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
 }
 Capture("inventory");
+Click("Settings");
+var settings=window.OwnedWindows.Single(x=>x.Title=="Settings");
+if(!settings.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text=="Custom routes folder (optional)"))throw new Exception("Settings must explain optional route override.");
+if(settings.GetVisualDescendants().OfType<CheckBox>().Single().IsChecked!=false)throw new Exception("Automatic updates must default off.");
+if(settings.GetVisualDescendants().OfType<Button>().Single(x=>x.Content as string=="Install update and exit").IsEnabled)throw new Exception("Source build must not offer install.");
+Capture("settings",settings);settings.Close();
 var slots=window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.UniformGrid>().Single();
 if(slots.Columns!=12||slots.Rows!=5||slots.Children.Count!=60)throw new Exception("Inventory geometry must match the game: 12 × 5.");
 if(slots.Children.Take(5).Cast<SlotButton>().Any(x=>!x.CanDrag))throw new Exception("Unpinned potions must be draggable.");
@@ -136,7 +142,27 @@ filter.GetVisualDescendants().OfType<CheckBox>().Single(x=>x.Content as string==
 filter.Close();Capture("all-accounts-filtered");
 if(app.Accounts.Items("").Count!=89)throw new Exception("Display filtering failed.");
 if(app.Store.Items("Storage","Inventory").Count!=1)throw new Exception("Hiding must not remove history.");
-Click("Account manager");
-var manager=window.OwnedWindows.Single(x=>x.Title=="Account manager");Capture("account-manager",manager);manager.Close();
+var sourceAccount=app.Accounts.CreateGameAccount("UI source");
+var destinationAccount=app.Accounts.CreateGameAccount("UI destination");
+app.Accounts.AssignCharacter("Example",sourceAccount.Id);
+app.Accounts.AssignCharacter("Storage",destinationAccount.Id);
+app.Accounts.SetPairCoexistence(sourceAccount.Id,destinationAccount.Id,CoexistencePolicy.Yes);
+app.Accounts.SetDisplay("Storage",true);Click("All accounts");Settle();
+emerald=window.GetVisualDescendants().OfType<Button>().Single(x=>x.Tag is ItemGroup g&&g.Item.Name=="Emerald");
+emerald.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Settle();
+if(window.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Organization plan"))
+    throw new Exception("Obsolete Organization plan must not be in normal navigation.");
+Click("Consolidate to bank");
+var consolidation=window.OwnedWindows.Single(x=>x.Title=="Consolidate to bank");
+var destination=consolidation.GetVisualDescendants().OfType<ComboBox>().Single();
+destination.SelectedItem="Storage";Settle();Capture("consolidate-to-bank",consolidation);
+if(!consolidation.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text?.Contains("Sources")==true)||
+   !consolidation.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text?.Contains("Example: 9 eligible")==true))
+    throw new Exception("Consolidation confirmation must show source characters and quantities.");
+if(consolidation.GetVisualDescendants().OfType<Button>().Any(x=>(x.Content as string) is "Transfer one unit" or "Start capture" or "Save selected review draft"))
+    throw new Exception("Testing and planning controls leaked into the consolidation flow.");
+consolidation.GetVisualDescendants().OfType<Button>().Single(x=>x.Content as string=="Cancel")
+    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
+if(app.Store.ListOrganizationPlans().Count!=0)throw new Exception("Cancelling consolidation must not save a transfer plan.");
 window.Close();
 Console.WriteLine("UI checks completed. Synthetic data only.");

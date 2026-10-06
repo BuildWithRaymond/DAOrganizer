@@ -6,6 +6,7 @@ public sealed partial class Organizer:IDisposable
 {
     public InventoryStore Store{get;}
     public AccountCatalog Accounts{get;}
+    public AppUpdates Updates{get;}
     public List<GameSession> Sessions{get;}=[];
     public string ClientPath{get;set;}
     public string WorldLogsPath{get;set;}
@@ -15,15 +16,21 @@ public sealed partial class Organizer:IDisposable
     public bool IsDemo{get;}
     public CancellationTokenSource? Operation{get;private set;}
     public bool Busy=>Operation!=null;
-    public Organizer(string? directory=null,bool demo=false)
+    private int _launching;
+    public bool HasOpenClients=>Volatile.Read(ref _launching)>0||Sessions.Any(x=>x.Online||x.HasOpenClient);
+    public Organizer(string? directory=null,bool demo=false,IAppUpdateBackend? updateBackend=null)
     {
         IsDemo=demo;
         DataDirectory=directory??Environment.GetEnvironmentVariable("DAORGANIZER_DATA_DIR")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DAOrganizer");
         if(!demo)Directory.CreateDirectory(DataDirectory);
         Store=new(demo?":memory:":Path.Combine(DataDirectory,"inventory.db"));
+        Updates=new(Store,demo,updateBackend??new VelopackUpdates());
+        if(!demo)Store.ResolveKnownNoSendWithdrawalFailures(DateTimeOffset.UtcNow);
+        if(!demo)ReconcileRecordedTransferDeliveries();
+        if(!demo)ReconcileUncommittedQuantityPrompts();
         Accounts=new(Store);
         ClientPath=Store.Get<string>("client")??ClientLauncher.DefaultClient;
-        WorldLogsPath=Store.Get<string>("worldLogs")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Dark Ages","WorldLogs");
+        WorldLogsPath=Store.Get<string>("worldLogs")??"";
         foreach(var character in Store.Characters())Store.MarkStale(character.Name);
         if(demo)
         {
@@ -33,15 +40,22 @@ public sealed partial class Organizer:IDisposable
     }
     public async Task LoadWorld()
     {
-        if(IsDemo||!Directory.Exists(WorldLogsPath)){World=null;WorldStatus="Choose your WorldLogs folder in Settings to enable bank travel.";return;}
-        World=await Task.Run(()=>WorldGraph.Load(WorldLogsPath));WorldStatus=$"{World.Maps.Count:N0} maps loaded";
+        if(IsDemo){World=null;WorldStatus="Demo routes are disabled.";return;}
+        World=null;
+        var custom=Directory.Exists(WorldLogsPath);
+        World=await Task.Run(()=>custom?WorldGraph.Load(WorldLogsPath):WorldGraph.LoadBundled());
+        if(World.Maps.Count==0){World=null;throw new InvalidDataException("Custom routes folder contains no maps. Clear it in Settings to use bundled routes.");}
+        WorldStatus=$"{World.Maps.Count:N0} {(custom?"custom":"bundled")} maps loaded";
     }
     public void SaveSettings(){RequireLiveProfile();ClientLauncher.Validate(ClientPath);Store.Put("client",ClientPath);Store.Put("worldLogs",WorldLogsPath);}
     public GameSession? Session(string? name)=>Sessions.LastOrDefault(x=>x.Online&&string.Equals(x.Name,name,StringComparison.OrdinalIgnoreCase));
     public async Task<GameSession> Launch()
     {
         RequireLiveProfile();
-        var session=new GameSession(Store);try{await session.LaunchAsync(ClientPath);Sessions.Add(session);return session;}catch{session.Dispose();throw;}
+        var session=new GameSession(Store);Interlocked.Increment(ref _launching);
+        try{await session.LaunchAsync(ClientPath);Sessions.Add(session);return session;}
+        catch{session.Dispose();throw;}
+        finally{Interlocked.Decrement(ref _launching);}
     }
     public Item[] Items(string name,string location)
     {

@@ -1,0 +1,394 @@
+using Microsoft.Data.Sqlite;
+
+namespace DAOrganizer.Core;
+
+public enum TransferRunState
+{
+    Preparing,InSourceInventory,ExchangeOpen,Offered,Accepting,RecipientVerified,Banking,
+    Complete,NeedsReconciliation,Failed
+}
+
+public sealed record TransferRun(Guid Id,Guid PlanId,Guid StepId,string SourceCharacter,
+    string DestinationCharacter,TransferRunState State,string LastVerifiedHolder,long Quantity,
+    string BeforeFingerprint,string? Reason,DateTimeOffset CreatedAt,DateTimeOffset UpdatedAt);
+
+public sealed partial class InventoryStore
+{
+    // Earlier builds journaled these exact pre-send withdrawal checks as uncertain custody.
+    // Both exceptions precede the item packet, so only the two-event Preparing case is released.
+    public int ResolveKnownNoSendWithdrawalFailures(DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                using var find=_db.CreateCommand();
+                find.CommandText="""
+                    SELECT r.id FROM transfer_runs r
+                    WHERE r.state='NeedsReconciliation'
+                      AND r.reason IN ('Source bank scan is too old for an approved withdrawal.',
+                                       'Approach and scan the same nearby banker before withdrawal.')
+                      AND r.last_verified_holder=r.source_character
+                      AND (SELECT count(*) FROM transfer_events e WHERE e.run_id=r.id)=2
+                      AND EXISTS(SELECT 1 FROM transfer_events e WHERE e.run_id=r.id AND e.ordinal=0 AND e.state='Preparing')
+                      AND EXISTS(SELECT 1 FROM transfer_events e WHERE e.run_id=r.id AND e.ordinal=1 AND e.state='NeedsReconciliation')
+                    """;
+                using var reader=find.ExecuteReader();var ids=new List<string>();
+                while(reader.Read())ids.Add(reader.GetString(0));
+                reader.Close();
+                foreach(var id in ids)
+                {
+                    Execute("UPDATE transfer_runs SET state='Failed',reason='Pre-send withdrawal gate; no withdrawal packet sent',updated_at=$at WHERE id=$id",
+                        ("$at",now.ToString("O")),("$id",id));
+                    Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,2,'Failed',$at,'Known pre-send withdrawal gate; source reservation released')",
+                        ("$id",id),("$at",now.ToString("O")));
+                }
+                Execute("COMMIT");
+                return ids.Count;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    // This is a durable preflight checkpoint. It never sends a packet or changes custody.
+    public TransferRun BeginTransferPreparation(Guid planId,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var saved=LoadOrganizationPlanCore(planId)??throw new KeyNotFoundException("Organization plan not found.");
+                if(saved.Approval!=PlanApprovalState.Approved||now>=saved.Plan.ExpiresAt)
+                    throw new InvalidOperationException("Plan is not approved or has expired.");
+                var step=saved.Plan.Steps[saved.NextStepOrdinal];
+                if(step.Readiness!=OrganizationReadiness.Ready||step.RouteKind!=TransferRouteKind.Direct)
+                    throw new InvalidOperationException("Only a ready direct step can begin preparation.");
+                var state=ReadOrganizationStateWithinTransaction();
+                if(state.Fingerprint!=saved.CheckpointFingerprint||
+                   !OrganizationPlanContract.Matches(state,step.ExpectedBefore)||
+                   !OrganizationPlanContract.MatchesSource(state,step))
+                    throw new StaleOrganizationPlanException("Approved transfer step changed. Replan or reconcile.");
+                using(var existing=_db.CreateCommand())
+                {
+                    existing.CommandText="SELECT count(*) FROM transfer_runs WHERE plan_id=$plan AND step_id=$step";
+                    existing.Parameters.AddWithValue("$plan",planId.ToString("D"));
+                    existing.Parameters.AddWithValue("$step",step.Id.ToString("D"));
+                    if(Convert.ToInt32(existing.ExecuteScalar())!=0)
+                        throw new InvalidOperationException("Transfer step already has a journal. Review it before retrying.");
+                }
+                var run=new TransferRun(Guid.NewGuid(),planId,step.Id,step.SourceCharacter,
+                    step.DestinationCharacter,TransferRunState.Preparing,step.SourceCharacter,step.Quantity,
+                    state.Fingerprint,null,now,now);
+                try
+                {
+                    Execute("""
+                        INSERT INTO transfer_runs(id,plan_id,step_id,source_character,destination_character,state,
+                            last_verified_holder,quantity,before_fingerprint,reason,created_at,updated_at)
+                        VALUES($id,$plan,$step,$source,$destination,'Preparing',$holder,$quantity,$fingerprint,NULL,$created,$updated)
+                        """,("$id",run.Id.ToString("D")),("$plan",planId.ToString("D")),
+                        ("$step",step.Id.ToString("D")),("$source",step.SourceCharacter),
+                        ("$destination",step.DestinationCharacter),("$holder",step.SourceCharacter),
+                        ("$quantity",step.Quantity),("$fingerprint",state.Fingerprint),
+                        ("$created",now.ToString("O")),("$updated",now.ToString("O")));
+                }
+                catch(SqliteException e) when(e.SqliteErrorCode==19)
+                {throw new InvalidOperationException("Another transfer or reconciliation already reserves this source.",e);}
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,0,'Preparing',$at,'Preflight passed; no packet sent')",
+                    ("$id",run.Id.ToString("D")),("$at",now.ToString("O")));
+                Execute("COMMIT");
+                return run;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    public TransferRun? LoadTransferRun(Guid id)
+    {
+        lock(_gate)
+        {
+            using var command=_db.CreateCommand();
+            command.CommandText="""
+                SELECT plan_id,step_id,source_character,destination_character,state,last_verified_holder,
+                    quantity,before_fingerprint,reason,created_at,updated_at
+                FROM transfer_runs WHERE id=$id
+                """;
+            command.Parameters.AddWithValue("$id",id.ToString("D"));
+            using var reader=command.ExecuteReader();
+            if(!reader.Read())return null;
+            if(!Enum.TryParse<TransferRunState>(reader.GetString(4),false,out var state)||!Enum.IsDefined(state))
+                throw new InvalidDataException("Transfer journal state is malformed.");
+            return new(id,Guid.Parse(reader.GetString(0)),Guid.Parse(reader.GetString(1)),
+                reader.GetString(2),reader.GetString(3),state,reader.GetString(5),reader.GetInt64(6),
+                reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),
+                DateTimeOffset.Parse(reader.GetString(9)),DateTimeOffset.Parse(reader.GetString(10)));
+        }
+    }
+
+    public IReadOnlyList<TransferRun> ListTransferRuns(int limit=50)
+    {
+        if(limit is <1 or >200)throw new ArgumentOutOfRangeException(nameof(limit));
+        lock(_gate)
+        {
+            using var command=_db.CreateCommand();
+            command.CommandText="SELECT id FROM transfer_runs ORDER BY updated_at DESC,id DESC LIMIT $limit";
+            command.Parameters.AddWithValue("$limit",limit);
+            using var reader=command.ExecuteReader();var ids=new List<Guid>();
+            while(reader.Read())ids.Add(Guid.Parse(reader.GetString(0)));
+            reader.Close();
+            return ids.Select(id=>LoadTransferRun(id)!).ToArray();
+        }
+    }
+
+    public TransferRun MarkTransferNeedsReconciliation(Guid id,string reason,DateTimeOffset now)
+    {
+        if(string.IsNullOrWhiteSpace(reason)||reason.Length>256)
+            throw new ArgumentException("Give a short local reconciliation reason.",nameof(reason));
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                if(run.State is TransferRunState.Complete or TransferRunState.Failed or TransferRunState.NeedsReconciliation)
+                    throw new InvalidOperationException("Transfer is already terminal or awaiting reconciliation.");
+                Execute("UPDATE transfer_runs SET state='NeedsReconciliation',reason=$reason,updated_at=$at WHERE id=$id",
+                    ("$reason",reason),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'NeedsReconciliation',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$detail",reason));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    // Call only after the saved two-session trace is independently reanalyzed and matches the run's step.
+    // This corrects custody evidence and releases only the source reservation under schema v5.
+    // Destination banking remains unconfirmed and the original step cannot be replayed.
+    public TransferRun RecordVerifiedRecipientDelivery(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                using var events=_db.CreateCommand();
+                events.CommandText="SELECT state FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 2";
+                events.Parameters.AddWithValue("$id",id.ToString("D"));
+                using var reader=events.ExecuteReader();var latest=new List<string>();
+                while(reader.Read())latest.Add(reader.GetString(0));
+                reader.Close();
+                if(run.State!=TransferRunState.NeedsReconciliation||
+                   !string.Equals(run.LastVerifiedHolder,run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+                   run.Reason?.StartsWith("Recipient delivery was not proven:",StringComparison.Ordinal)!=true||
+                   latest.Count!=2||latest[0]!="NeedsReconciliation"||latest[1]!="Accepting"||now<run.UpdatedAt)
+                    throw new InvalidOperationException("Only an unverified post-acceptance delivery can be corrected.");
+                const string reason="Saved exchange capture proves recipient delivery; bank deposit not confirmed.";
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("UPDATE transfer_runs SET last_verified_holder=$holder,reason=$reason,updated_at=$at WHERE id=$id",
+                    ("$holder",run.DestinationCharacter),("$reason",reason),("$at",now.ToString("O")),
+                    ("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'NeedsReconciliation',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),
+                    ("$detail",reason));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    // Caller must verify the saved two-session trace and persisted inventories before releasing
+    // this reservation. The withdrawn item remains in source inventory; original step stays spent.
+    public TransferRun ReleaseUncommittedQuantityPrompt(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                using var events=_db.CreateCommand();
+                events.CommandText="SELECT state FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 2";
+                events.Parameters.AddWithValue("$id",id.ToString("D"));
+                using var reader=events.ExecuteReader();var latest=new List<string>();
+                while(reader.Read())latest.Add(reader.GetString(0));
+                reader.Close();
+                if(run.State!=TransferRunState.NeedsReconciliation||
+                    !string.Equals(run.LastVerifiedHolder,run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+                    run.Reason?.StartsWith("Exact two-sided offer was not verified:",StringComparison.Ordinal)!=true||
+                    latest.Count!=2||latest[0]!="NeedsReconciliation"||latest[1]!="ExchangeOpen"||now<run.UpdatedAt)
+                    throw new InvalidOperationException("Only an uncommitted source-held quantity prompt can be released.");
+                const string reason="Saved exchange capture proves no offer or acceptance; withdrawn unit remains in source inventory.";
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("UPDATE transfer_runs SET state='Failed',reason=$reason,updated_at=$at WHERE id=$id",
+                    ("$reason",reason),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'Failed',$at,$reason)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$reason",reason));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    private const string RecoveryDepositIntent="Recovery deposit intent persisted before send";
+
+    // Only the historical pre-send proximity gate is retryable. Once this intent is durable,
+    // a crash or uncertain reply cannot cause a second deposit attempt.
+    public TransferRun BeginRecoveredDeposit(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                var saved=LoadOrganizationPlanCore(run.PlanId)??throw new InvalidDataException("Transfer plan is missing.");
+                var step=saved.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+                using var events=_db.CreateCommand();
+                events.CommandText="SELECT state,detail FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 2";
+                events.Parameters.AddWithValue("$id",id.ToString("D"));
+                using var reader=events.ExecuteReader();var latest=new List<(string State,string Detail)>();
+                while(reader.Read())latest.Add((reader.GetString(0),reader.GetString(1)));
+                reader.Close();
+                using var prior=_db.CreateCommand();
+                prior.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id AND detail=$detail";
+                prior.Parameters.AddWithValue("$id",id.ToString("D"));
+                prior.Parameters.AddWithValue("$detail",RecoveryDepositIntent);
+                if(run.State!=TransferRunState.NeedsReconciliation||run.Quantity!=1||
+                    run.Reason!="Approach and scan the same nearby banker before an approved deposit."||
+                    !string.Equals(run.LastVerifiedHolder,run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)||
+                    latest.Count!=2||latest[0].State!="NeedsReconciliation"||latest[1].State!="Banking"||
+                    Convert.ToInt32(prior.ExecuteScalar())!=0||now<run.UpdatedAt||
+                    saved.Approval!=PlanApprovalState.Approved||step is null||
+                    step.RouteKind!=TransferRouteKind.Direct||step.Quantity!=1||
+                    !step.SourceCharacter.Equals(run.SourceCharacter,StringComparison.OrdinalIgnoreCase)||
+                    !step.DestinationCharacter.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Only a delivered unit stopped before its first deposit can resume banking.");
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("UPDATE transfer_runs SET state='Banking',reason=$detail,updated_at=$at WHERE id=$id",
+                    ("$detail",RecoveryDepositIntent),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'Banking',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$detail",RecoveryDepositIntent));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    // Called only after the recipient's live inventory decrease and fresh bank gain are checked.
+    public TransferRun CompleteRecoveredDeposit(Guid id,DateTimeOffset now)
+    {
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                var saved=LoadOrganizationPlanCore(run.PlanId)??throw new InvalidDataException("Transfer plan is missing.");
+                var step=saved.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId);
+                using var last=_db.CreateCommand();
+                last.CommandText="SELECT detail FROM transfer_events WHERE run_id=$id ORDER BY ordinal DESC LIMIT 1";
+                last.Parameters.AddWithValue("$id",id.ToString("D"));
+                var state=ReadOrganizationStateWithinTransaction();
+                var destinationAfter=step?.ExpectedAfter.SingleOrDefault(x=>
+                    x.Character.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&x.Location=="Bank");
+                if(run.State!=TransferRunState.Banking||run.Reason!=RecoveryDepositIntent||
+                    !string.Equals(run.LastVerifiedHolder,run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)||
+                    last.ExecuteScalar() as string!=RecoveryDepositIntent||now<run.UpdatedAt||
+                    saved.Approval!=PlanApprovalState.Approved||saved.NextStepOrdinal!=0||
+                    saved.Plan.Steps.Length!=1||step is null||step.Quantity!=1||
+                    destinationAfter is null||!OrganizationPlanContract.Matches(state,[destinationAfter])||
+                    state.Characters.SingleOrDefault(x=>x.Name.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase))
+                        is not {BankState:"Current",InventoryState:"Current"}||
+                    state.Items.Any(x=>x.Character.Equals(run.DestinationCharacter,StringComparison.OrdinalIgnoreCase)&&
+                        x.Location=="Inventory"&&ItemGroups.Key(x.Item)==step.ItemKey))
+                    throw new InvalidOperationException("Recipient inventory and destination bank do not prove the recovered deposit.");
+                Execute("UPDATE organization_plans SET approval='Completed',next_step_ordinal=1,checkpoint_fingerprint=$fingerprint,checkpoint_state=$state WHERE id=$id",
+                    ("$fingerprint",state.Fingerprint),("$state",System.Text.Json.JsonSerializer.Serialize(state)),
+                    ("$id",run.PlanId.ToString("D")));
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                const string detail="Recovered recipient deposit confirmed by fresh inventory and bank snapshots";
+                Execute("UPDATE transfer_runs SET state='Complete',reason=$detail,updated_at=$at WHERE id=$id",
+                    ("$detail",detail),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,'Complete',$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$at",now.ToString("O")),("$detail",detail));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    public TransferRun AdvanceTransferRun(Guid id,TransferRunState expected,TransferRunState next,
+        string detail,DateTimeOffset now)
+    {
+        if(string.IsNullOrWhiteSpace(detail)||detail.Length>256)
+            throw new ArgumentException("Give a short local journal detail.",nameof(detail));
+        if(!Allowed(expected,next))throw new InvalidOperationException("Transfer journal transition is not allowed.");
+        lock(_gate)
+        {
+            Execute("BEGIN IMMEDIATE TRANSACTION");
+            try
+            {
+                var run=LoadTransferRun(id)??throw new KeyNotFoundException("Transfer journal not found.");
+                if(run.State!=expected||now<run.UpdatedAt)
+                    throw new InvalidOperationException("Transfer journal changed or time moved backward.");
+                if(next==TransferRunState.Complete)
+                {
+                    var saved=LoadOrganizationPlanCore(run.PlanId)??throw new InvalidDataException("Journal plan is missing.");
+                    var step=saved.Plan.Steps.SingleOrDefault(x=>x.Id==run.StepId)
+                        ??throw new InvalidDataException("Journal step is missing.");
+                    if(saved.NextStepOrdinal<=step.Order)
+                        throw new InvalidOperationException("Bank and plan checkpoint are not verified.");
+                }
+                var holder=next==TransferRunState.RecipientVerified?run.DestinationCharacter:run.LastVerifiedHolder;
+                Execute("UPDATE transfer_runs SET state=$state,last_verified_holder=$holder,updated_at=$at WHERE id=$id",
+                    ("$state",next.ToString()),("$holder",holder),("$at",now.ToString("O")),("$id",id.ToString("D")));
+                using var count=_db.CreateCommand();
+                count.CommandText="SELECT count(*) FROM transfer_events WHERE run_id=$id";
+                count.Parameters.AddWithValue("$id",id.ToString("D"));
+                var ordinal=Convert.ToInt32(count.ExecuteScalar());
+                Execute("INSERT INTO transfer_events(run_id,ordinal,state,observed_at,detail) VALUES($id,$order,$state,$at,$detail)",
+                    ("$id",id.ToString("D")),("$order",ordinal),("$state",next.ToString()),
+                    ("$at",now.ToString("O")),("$detail",detail));
+                Execute("COMMIT");
+                return LoadTransferRun(id)!;
+            }
+            catch{Execute("ROLLBACK");throw;}
+        }
+    }
+
+    private static bool Allowed(TransferRunState expected,TransferRunState next)=>(expected,next) switch
+    {
+        (TransferRunState.Preparing,TransferRunState.InSourceInventory or TransferRunState.Failed)=>true,
+        (TransferRunState.InSourceInventory,TransferRunState.ExchangeOpen)=>true,
+        (TransferRunState.ExchangeOpen,TransferRunState.Offered)=>true,
+        (TransferRunState.Offered,TransferRunState.Accepting)=>true,
+        (TransferRunState.Accepting,TransferRunState.RecipientVerified)=>true,
+        (TransferRunState.RecipientVerified,TransferRunState.Banking)=>true,
+        (TransferRunState.Banking,TransferRunState.Complete)=>true,
+        _=>false
+    };
+}
