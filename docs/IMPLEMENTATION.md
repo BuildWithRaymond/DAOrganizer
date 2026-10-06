@@ -1,3 +1,5 @@
+> Historical implementation note. Current behavior: [architecture map](architecture/overview.md) and [user guide](GETTING_STARTED.md). WorldLogs routes are now bundled.
+
 > Historical implementation notes. Current behavior and setup are documented in [Getting started](GETTING_STARTED.md) and [Architecture](ARCHITECTURE.md).
 
 # DAOrganizer

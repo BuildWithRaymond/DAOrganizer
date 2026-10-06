@@ -51,7 +51,6 @@ public sealed partial class MainWindow:Window
         var sideBottom=new StackPanel{Spacing=8};
         sideBottom.Children.Add(Button("+  Add character",()=>EditCharacter(),"quiet"));
         sideBottom.Children.Add(Button("Account manager",AccountManager,"quiet"));
-        sideBottom.Children.Add(Button("Organization plan",OrganizationPreview,"quiet"));
         sideBottom.Children.Add(Button("Settings",()=>Settings(),"quiet"));
         DockPanel.SetDock(sideBottom,Dock.Bottom);sidebar.Children.Add(sideBottom);
         sidebar.Children.Add(new ScrollViewer{Content=_characters});
@@ -71,7 +70,7 @@ public sealed partial class MainWindow:Window
         Grid.SetRow(_tabs,2);main.Children.Add(_tabs);_toolbar.Margin=new(0,12,0,12);Grid.SetRow(_toolbar,3);main.Children.Add(_toolbar);
         Grid.SetRow(_body,4);main.Children.Add(_body);
         var statusRow=new Grid{ColumnDefinitions=new("*,Auto")};statusRow.Children.Add(_status);
-        var edition=Text(app.IsDemo?"DEMO COLLECTION  ·  FICTIONAL ACCOUNTS":"LOCAL COLLECTION  ·  v0.15",9,true);edition.LetterSpacing=1;Grid.SetColumn(edition,1);statusRow.Children.Add(edition);
+        var edition=Text(app.IsDemo?"DEMO COLLECTION  ·  FICTIONAL ACCOUNTS":"LOCAL COLLECTION  ·  v"+AppUpdates.CurrentVersion,9,true);edition.LetterSpacing=1;Grid.SetColumn(edition,1);statusRow.Children.Add(edition);
         var footer=new Border{Background=Brush("#0D0E10"),BorderBrush=Brush("#30291D"),BorderThickness=new(0,1,0,0),Padding=new(20,10),Child=statusRow};Grid.SetRow(footer,1);Grid.SetColumnSpan(footer,2);root.Children.Add(footer);Content=root;
         _timer.Tick+=(_,_)=>Refresh();_timer.Start();
         Opened+=async(_,_)=>
@@ -80,6 +79,8 @@ public sealed partial class MainWindow:Window
             if(_app.IsDemo)_status.Text="Demo collection - game actions are disabled.";
             else await Run(async()=>{await _app.LoadWorld();_banks.ItemsSource=_app.Banks();_status.Text=_app.WorldStatus;});
             await ArtworkReady;
+            await _app.Updates.Start();
+            if(_app.Updates.Automatic)_status.Text=_app.Updates.Status;
         };
         Closing+=OnClosing;Closed+=(_,_)=>{_timer.Stop();_images.Dispose();foreach(var bitmap in _portraitBitmaps.Values)bitmap?.Dispose();};
         Refresh(true);

@@ -1,56 +1,45 @@
-# Release workflow
+# Releases and optional updates
 
-DAOrganizer releases are portable, self-contained Windows x64 archives. The application profile remains under `%LOCALAPPDATA%\DAOrganizer` (or `DAORGANIZER_DATA_DIR`) and passwords remain in Windows Credential Manager; neither is copied into a release archive.
+DAOrganizer ships a self-contained Windows x64 installer and portable ZIP. Both support optional updates from stable releases in `BuildWithRaymond/DAOrganizer`. The app profile remains at `%LOCALAPPDATA%\DAOrganizer` (or `DAORGANIZER_DATA_DIR`); passwords remain in Windows Credential Manager. Installation uses the separate `BuildWithRaymond.DAOrganizer` application directory.
 
-## Version and channels
+## User controls and trust
 
-1. Choose either a stable tag (`vMAJOR.MINOR.PATCH`) or beta tag (`vMAJOR.MINOR.PATCH-beta.N`). Leading zeroes and other prerelease labels are rejected.
-2. Before tagging, update the single `<Version>` in `src/DAOrganizer.App/DAOrganizer.App.csproj` to the exact tag text without `v` (including `-beta.N`), add release notes to `CHANGELOG.md`, and merge that reviewed change normally. The workflow never rewrites source.
-3. Run manual **Build release candidate** workflow with intended tag and `publish=false` (default). It builds, tests, packages, verifies, and uploads an Actions artifact without publishing.
-4. After reviewing candidate, create and push matching tag. Tag push repeats candidate validation and uploads artifact; tag alone cannot publish a GitHub Release.
-5. To publish, deliberately dispatch workflow with existing matching tag and `publish=true`. This run checks out tag, repeats full candidate validation, downloads its own artifact, verifies checksum/manifest/archive again, then calls `gh release create --verify-tag`. `release-production` environment may require reviewers as an extra gate; workflow's explicit input is mandatory even if environment has no protection rules. Do not dispatch publication before release decision and signing policy review.
+Automatic updates are off by default. Settings can enable startup checks, background downloads and installation on a safe exit. Manual check, download and install controls work without enabling automatic mode. Installation is blocked while an organizer operation or owned game client is open, including a client awaiting login. Turning automatic mode off keeps a pending download from being applied automatically. Demo skips updater bootstrap, networking and preference writes. Source builds and old 0.15 ZIPs need one manual upgrade to an update-capable package.
 
-The workflow intentionally matches all `v*` tags so unsupported or malformed release tags fail visibly instead of being silently ignored. A tag whose base version differs from the app project also fails.
+Velopack 1.2.161 reads the public stable GitHub feed over HTTPS and verifies downloaded packages against feed checksums. No GitHub token is shipped or required. Releases are **unsigned**: these checks detect corruption but do not independently authenticate a publisher if its GitHub account/feed is compromised. Authenticode signing is not configured. The old helper's `release-stable.json` is informational evidence, not the updater feed; its unsigned trust fields remain accurate.
 
-## Candidate contents and manifest
+## Build a candidate
 
-The Windows job restores and Release-builds the solution, runs unit/protocol tests, headless UI checks, and the demo gallery, then calls the existing `tools/Package.ps1`. `DAOrganizer.Release` writes entries in ordinal order with a fixed ZIP timestamp, so identical package bytes produce an identical ZIP. It also verifies the expected executable, notices, changelog, and license directory.
-
-Each channel has its own `release-stable.json` or `release-beta.json`. Manifest schema 1 contains:
-
-- channel, semantic version, and source tag;
-- artifact name, GitHub release URL, byte size, and lowercase SHA-256;
-- changelog/release-notes reference;
-- minimum client version, minimum API version (`none`, because no central API is required), and supported profile schema range (1–4);
-- explicit `signed: false` and `informationalOnly: true` trust fields.
-
-The adjacent `.sha256` file detects accidental corruption when it is obtained through a trusted path. **It does not authenticate the publisher or release.** There is no approved code-signing identity, manifest-signing key, key-rotation/revocation policy, or client verification policy. Therefore manifests are informational and updater activation remains disabled. Do not add an updater or claim authenticity until those decisions are reviewed.
-
-## Local and Windows dry runs
-
-Run helper tests on any .NET 10 host:
+Update the app project's single `<Version>`, `CHANGELOG.md`, and `docs/releases/vVERSION.md`. Tag and app version must match. Run documented build, unit/protocol, UI and demo checks, then:
 
 ```powershell
+.\tools\Build-Release.ps1
+.\tools\Verify-Release.ps1
 dotnet run --project tools/DAOrganizer.Release -c Release -- self-test
 ```
 
-On Windows, perform the complete packaging dry run without a tag or publication:
+The build script restores pinned local `vpk` tooling, publishes into a fresh ignored version-specific package directory, includes license notices and the user guide, creates Velopack assets and checksums, and validates the update feed and portable contents. It refuses to reuse an old package directory; for repeat packaging of the same verified folder use `-SkipPublish` with a fresh `-Output`. No personal profile or external WorldLogs folder is needed. The sanitized route bundle is embedded in Core.
 
-```powershell
-dotnet restore DAOrganizer.slnx -m:1
-dotnet build DAOrganizer.slnx -c Release --no-restore -m:1 -p:UsedAvaloniaProducts=
-dotnet test tests/DAOrganizer.Tests -c Release --no-build -m:1
-dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/ui-checks
-dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/gallery --gallery
-.\tools\Package.ps1 -Output artifacts\package
-dotnet run --project tools/DAOrganizer.Release -c Release -- create --tag v0.15.0 --project src/DAOrganizer.App/DAOrganizer.App.csproj --package artifacts/package --output artifacts/release --repository OWNER/REPOSITORY --notes-url https://github.com/OWNER/REPOSITORY/blob/v0.15.0/CHANGELOG.md
-Get-FileHash artifacts\release\DAOrganizer-0.15.0-win-x64.zip -Algorithm SHA256
-```
+Publish these files together from the checked candidate:
 
-Verify candidate locally with `dotnet run --project tools/DAOrganizer.Release -c Release -- verify --tag v0.15.0 --project src/DAOrganizer.App/DAOrganizer.App.csproj --output artifacts/release --repository OWNER/REPOSITORY`. Compare `Get-FileHash` with `.sha256`, inspect ZIP/manifest, and keep generated packages under ignored `artifacts/`.
+| Asset | Purpose |
+| --- | --- |
+| `DAOrganizer-win-Setup.exe` | Recommended install with Start menu shortcut |
+| `DAOrganizer-win-Portable.zip` | Update-capable portable app; start root `DAOrganizer.exe` |
+| `BuildWithRaymond.DAOrganizer-VERSION-full.nupkg` | Full update package; users do not install this manually |
+| `releases.win.json` and `RELEASES` (when generated) | Velopack feed files; retain original package filenames |
+| `SHA256SUMS.txt` | Candidate checksums for all other release assets |
 
-## Rollback and recovery
+Do not replace assets in an existing published version. Ship a new version for corrections.
 
-An extracted portable app can be rolled back by closing DAOrganizer, retaining the newer extracted directory, and launching a previously retained release from a separate directory. Do not overwrite a working extraction in place. Profiles and credentials are external to either directory, so replacing binaries does not intentionally delete them.
+## GitHub publication
 
-Database migrations are a separate limit: a newer app may upgrade the profile, and an older binary may not understand the newer schema. Use the migration backup created beside the profile only after closing all DAOrganizer processes, and preserve both the current profile and backup before recovery. Restoring an older database loses changes made after that backup. If no compatible backup exists, return to the newer client rather than forcing a downgrade. A failed release can be marked as a GitHub prerelease or removed from recommendations, but published tags and artifacts should be retained for audit; issue a corrected version instead of silently replacing bytes.
+The **Build release candidate** workflow builds and checks all projects, exercises the app with synthetic data, creates installer/portable/update assets, and uploads a reviewable candidate. Tag pushes validate only; publication requires explicit manual dispatch with `publish=true` and an existing matching tag. The publication job checks out that tag, rebuilds the candidate, validates downloaded assets again, then publishes the release. `release-production` environment protections apply if configured.
+
+The deterministic archive helper remains a separate release-evidence check. It records supported profile schemas 1–5 and unsigned status. Its raw ZIP and informational manifests are uploaded as Actions evidence and are not user downloads or an alternate update feed.
+
+## Recovery
+
+Failed checks/downloads leave the installed build usable. A downloaded package waits until an allowed exit; an app crash does not authorize installation. After an update, reopen DAOrganizer normally. Automatic startup application is disabled so it cannot bypass saved preferences or game-client guards.
+
+Before any manual rollback, close organizer clients and the organizer, preserve the current profile, and keep the newer installation. Profile schema migrations can prevent older builds from reading newer data. Use a migration backup only after preserving both current data and backup; restoring it loses later changes. If compatibility is uncertain, return to the newer build rather than forcing a downgrade. Retain published versions and issue a corrected stable release when needed.

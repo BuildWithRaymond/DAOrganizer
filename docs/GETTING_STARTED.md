@@ -2,7 +2,11 @@
 
 ## Install or update
 
-Download the Windows x64 ZIP from the repository's Releases page. Extract all files together. Run `DAOrganizer.exe`; no separate .NET runtime installation is needed. Releases are currently unsigned.
+Download `DAOrganizer-win-Setup.exe` from [Releases](https://github.com/BuildWithRaymond/DAOrganizer/releases/latest) and install. For portable use, extract all of `DAOrganizer-win-Portable.zip` and open its root `DAOrganizer.exe`. Both include .NET and WorldLogs routes. Releases are unsigned.
+
+Automatic updates are optional and off by default. Enable **Automatically download and install updates on safe exit** in Settings to check stable GitHub releases at startup and download newer packages. Installation waits for a normal exit with no current operation or open organizer-launched game client. If clients are still open, the downloaded update stays pending. Turning the option off prevents automatic installation, including an already downloaded update.
+
+For manual updates use **Check for updates**, **Download update**, then **Install update and exit**. Offline or failed downloads leave the installed version usable. Old 0.15 ZIPs and source builds require a manual install/extraction of an update-capable release first. [Release trust and recovery](RELEASING.md) explains the unsigned GitHub feed and backup limits.
 
 Use one organizer at a time. When updating, finish or stop current operations and safely log out clients launched through the old organizer before exiting it. Exiting disconnects its proxied sessions. Opening a new build uses the same saved profile. The organizer does not stop or update Excalibur.
 
@@ -11,7 +15,7 @@ To explore without a game installation, run `DAOrganizer.exe --demo`. The six fi
 ## Set up your game
 
 1. Open **Settings**. Select the supported `Darkages.exe` from your DATester 7.41 installation. The launcher verifies its SHA-256 hash before launch.
-2. Set **WorldLogs folder** to your own map/route data. Deposits and withdrawals travel to banks and require this data. Bank reads near an NPC do not. No WorldLogs are shipped here.
+2. WorldLogs routes are included and loaded automatically. Advanced users can set **Custom routes folder (optional)**; leave it blank to use bundled routes. An unavailable old path falls back to bundled routes. Deposits and withdrawals still travel to banks; bank reads near an NPC do not.
 3. Use **Add character**. Passwords are optional; if supplied, they are stored in Windows Credential Manager, never in SQLite.
 4. Select the character and choose **Launch client**. Inventory and equipment update while connected through the organizer.
 
@@ -31,11 +35,11 @@ These are sorting preferences, not locks. Drag potions normally. Right-click any
 
 ## Read bank contents
 
-**Organization plan** shows possible cross-character consolidation. For a one-unit direct trial, connect two organizer-launched clients, stand adjacent, choose a Direct route, click **Transfer one unit**, and confirm the exact item and characters. The organizer refreshes bank contents, checks both visible partner IDs, prepares and approves the route, exchanges the unit, then deposits it. If any action is unconfirmed, it stops without an automatic retry and shows the last verified holder under Transfer recovery. Use a low-value item for the first live trial. Advanced review drafts are available under the collapsed section. Potential slot savings remain estimates until a transfer and destination bank scan complete.
+To gather one item into a single bank, open that item's details under **All accounts**, choose **Consolidate to bank**, select the destination character, and review the one-page summary. It names the destination, every source character, eligible quantities, and protected quantities that will stay put. After confirmation DAOrganizer logs in the destination, walks it to the nearest reachable bank, and keeps it there. It then handles one source at a time: login, travel to the same bank, withdraw or use the carried item, exchange a protocol-safe quantity, verify both clients, deposit, verify the destination bank, and safely log out that source.
 
-If exchange delivery succeeded but deposit stopped at the old banker proximity gate before any deposit packet, Transfer recovery offers **Deposit [item] on [recipient]** once that recipient is connected. This checks the carried unit and destination bank before one deposit attempt. Do not start another transfer for that unit.
+The progress window shows only the current character, current action, completed transfers, and a blocker. If an item action is uncertain, consolidation stops without an automatic retry and reports the last verified holder. Do not begin another consolidation for that item until its recovery evidence is resolved. Pinned inventory copies and equipment stay protected. Account pairs must be explicitly marked as able to coexist, and offline characters need saved credentials. Same-account handoff is not supported yet.
 
-For a controlled manual trade capture, connect two distinct organizer-launched clients, select both in **Organization plan**, and start capture. Complete one low-value trade manually, wait for both accepts, recipient inventory gain and exchange-window close, then stop and save. The capture stays under the local profile's `diagnostics/manual-trades` folder and contains names and packet payloads; do not share raw JSON.
+Manual trade capture, exact-plan review drafts, and packet visibility details are retained as internal diagnostics and automated coverage, but are no longer part of the normal player flow. Local diagnostic JSON can contain character names, item names, and packet payloads; do not share it.
 
 Use **Scan Bank** near any visible NPC, including an innkeeper. The organizer requests the list without walking or transferring anything, and no WorldLogs are required. A complete response saves a snapshot. **Travel to bank** is a separate action for visiting a selected bank. Automatic deposits and withdrawals still travel to a bank before transferring items.
 
@@ -68,7 +72,7 @@ Deposits also require a confirmed inventory decrease. If the banker refuses beca
 - Windows is required for live client launch, input and credential storage.
 - Only clients launched through the organizer are tracked.
 - Only the exact supported executable is accepted.
-- Bank contents are snapshots, not a live account-wide API. Bank gold is not tracked.
+- Bank contents are snapshots, not a live account-wide API. Consolidation refreshes them before each guarded item action. Bank gold is not tracked.
 - Login completeness uses observed appearance/map/status/control messages and a quiet period; the server provides no inventory total.
 - Transferability is unknown from these item packets. A rejected action is reported, not assumed successful.
 - Routes describe observed map connections, not character permissions or every dynamic obstacle. Some destinations require manual approach.

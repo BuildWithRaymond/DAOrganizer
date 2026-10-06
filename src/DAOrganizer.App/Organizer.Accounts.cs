@@ -25,10 +25,19 @@ public sealed partial class Organizer
     {
         if(World==null)throw new InvalidOperationException("Load WorldLogs before depositing or withdrawing items at a bank.");
         var route=BankRoutes.Closest(World,session.MapId,session.Position);
+        await TravelToBank(session,route,token);
+    }
+    private async Task TravelToBank(GameSession session,BankRoute route,CancellationToken token)
+    {
+        await TravelToBank(session,route,route.Portals,token);
+    }
+    private async Task TravelToBank(GameSession session,BankRoute route,IReadOnlyList<Portal> portals,CancellationToken token)
+    {
+        if(World==null)throw new InvalidOperationException("Load WorldLogs before depositing or withdrawing items at a bank.");
         var destination=new BankDestination(route.Map.Id,route.Map.Name,Store.Get<string>("banker/"+route.Map.Id));
         using var travel=CancellationTokenSource.CreateLinkedTokenSource(token);travel.CancelAfter(TimeSpan.FromMinutes(10));
         void Damaged()=>travel.Cancel();session.Damaged+=Damaged;
-        try{await new Navigation(World,Path.GetDirectoryName(ClientPath)!).Travel(session,destination,travel.Token,route.Portals);}
+        try{await new Navigation(World,Path.GetDirectoryName(ClientPath)!).Travel(session,destination,travel.Token,portals);}
         finally{session.Damaged-=Damaged;}
     }
     public async Task UpdateAccounts()

@@ -18,7 +18,12 @@ public sealed class App:Application
         {
             var organizer=new Organizer(demo:desktop.Args?.Contains("--demo")==true);var window=new MainWindow(organizer);desktop.MainWindow=window;
             var tray=Tray.Attach(this,window,organizer);
-            desktop.Exit+=(_,_)=>{tray.Dispose();organizer.Dispose();};
+            desktop.Exit+=(_,_)=>
+            {
+                var busy=organizer.Busy;var connected=organizer.HasOpenClients;
+                organizer.Updates.PrepareExit(busy,connected);
+                tray.Dispose();organizer.Dispose();
+            };
         }
         base.OnFrameworkInitializationCompleted();
     }

@@ -8,6 +8,7 @@ A Windows inventory companion with a black-and-gold Celtic interface.
 Find items across characters, arrange your inventory, and review what stays, banks, or goes.
 
 [![Build](https://github.com/buildwithraymond/DAOrganizer/actions/workflows/build.yml/badge.svg)](https://github.com/buildwithraymond/DAOrganizer/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/BuildWithRaymond/DAOrganizer?color=d6b46a)](https://github.com/BuildWithRaymond/DAOrganizer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d6b46a.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/platform-Windows_x64-191a1e.svg)](docs/GETTING_STARTED.md)
 [![.NET](https://img.shields.io/badge/.NET-10-191a1e.svg)](global.json)
@@ -16,7 +17,13 @@ Find items across characters, arrange your inventory, and review what stays, ban
 
 </div>
 
-![DAOrganizer collection: Celtic gold details, category grids and quantity badges](docs/screenshots/collection-v0.15.0.png)
+<p align="center">
+  <img src="docs/screenshots/daorganizer-launch.png" width="900" alt="DAOrganizer launch artwork: a shared fantasy collection framed in Celtic gold" />
+</p>
+
+*Promotional artwork created with ImageGen. App screenshots below show the actual interface with fictional accounts.*
+
+![DAOrganizer collection: Celtic gold details, category grids and quantity badges](docs/screenshots/collection-v0.16.0.png)
 
 ## A place for everything
 
@@ -25,13 +32,15 @@ Find items across characters, arrange your inventory, and review what stays, ban
 - **An inventory that makes sense.** The game's 12-column layout, drag-to-move, pinned slots, saved layouts and reviewed sorting with server confirmation.
 - **Flexible quick slots.** Carried Dual Crystal Arrows take slot 1. Available quick potions pack from the left; trinkets fill row one from the right. Pin or unpin any slot, and move potions freely.
 - **Rules you control.** Keep, Junk and Auto-deposit are explicit choices. Cleanout and deposit runs show a review before starting.
-- **Bank snapshots and account updates.** Read bank contents through a nearby NPC as soon as login completes. WorldLogs and bank travel are needed only for transfers; travel runs in the background.
+- **Gather items into one bank.** Review sources and protected quantities, choose a destination, then follow confirmed transfers one character at a time. Account coexistence and saved-login requirements remain explicit.
+- **Routes included.** Read nearby banks without travel; included WorldLogs routes support deposits, withdrawals and consolidation. No route download or folder setup.
+- **Optional automatic updates.** Enable updates in Settings, or check and download manually. New stable GitHub releases install after a safe organizer exit.
 - **Local by default.** Snapshots stay in SQLite on your machine. Optional saved passwords use Windows Credential Manager.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/inventory-v0.15.0.png" alt="Character inventory with game sprites and flexible quick slots"/><br/><strong>Inventory, with game sprites</strong></td>
-<td width="50%"><img src="docs/screenshots/item-details-v0.15.0.png" alt="Item drawer with owners and locations"/><br/><strong>Every owner. Every location.</strong></td>
+<td width="50%"><img src="docs/screenshots/inventory-v0.16.0.png" alt="Character inventory with game sprites and flexible quick slots"/><br/><strong>Inventory, with game sprites</strong></td>
+<td width="50%"><img src="docs/screenshots/item-details-v0.16.0.png" alt="Item drawer with owners and locations"/><br/><strong>Every owner. Every location.</strong></td>
 </tr>
 </table>
 
@@ -39,9 +48,12 @@ Find items across characters, arrange your inventory, and review what stays, ban
 
 ## Try it
 
-1. Download the **Windows x64 ZIP** from [Releases](https://github.com/buildwithraymond/DAOrganizer/releases/latest).
-2. Extract the entire folder and open `DAOrganizer.exe`. Keep its companion files beside it; .NET is included.
-3. Set your game executable and WorldLogs folder in **Settings**, then add a character and launch through the organizer.
+1. Download **DAOrganizer-win-Setup.exe** from [Releases](https://github.com/BuildWithRaymond/DAOrganizer/releases/latest) and install. Prefer no install? Extract **DAOrganizer-win-Portable.zip** and open its `DAOrganizer.exe`. Both include .NET.
+2. Open **Settings** and select the supported `Darkages.exe` if needed. WorldLogs routes are already included.
+3. Add a character, then choose **Launch client**. Optional passwords stay in Windows Credential Manager.
+4. For automatic updates, enable **Automatically download and install updates on safe exit** in Settings. Finish actions and close organizer-launched game clients before exiting. Updates are off by default; manual checks remain available.
+
+Older 0.15 ZIPs need one manual install/extraction of this release to gain the updater. Downloads are unsigned. Update packages are checked against the GitHub feed; see [release trust and recovery](docs/RELEASING.md).
 
 Want to explore without a game installation?
 
@@ -75,7 +87,7 @@ Run the checks and make a portable Windows package:
 dotnet test tests/DAOrganizer.Tests -c Release --no-build -m:1
 dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/ui-checks
 dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/gallery --gallery
-.\tools\Package.ps1 -Output artifacts/DAOrganizer
+.\tools\Build-Release.ps1
 ```
 
 CI builds the solution, runs protocol/unit checks, exercises the UI with synthetic data, verifies demo isolation, renders screenshots and packages the app. See [Actions](https://github.com/buildwithraymond/DAOrganizer/actions) and [verification details](docs/CI.md).
@@ -91,7 +103,7 @@ CI builds the solution, runs protocol/unit checks, exercises the UI with synthet
 | `tests/DAOrganizer.UiChecks` | Headless interaction checks and screenshot gallery |
 | `vendor/Arbiter` | Vendored MIT-licensed protocol, process and sprite libraries |
 
-More detail: [Architecture](docs/ARCHITECTURE.md) · [Protocol research](docs/RESEARCH.md) · [Design](docs/design/black-and-gold.md) · [Changelog](CHANGELOG.md).
+More detail: [Current architecture](docs/architecture/overview.md) · [Protocol research](docs/RESEARCH.md) · [Design](docs/design/black-and-gold.md) · [Changelog](CHANGELOG.md).
 
 ## Before moving real items
 
@@ -102,6 +114,10 @@ Snapshots can be stale. Bank silence after a correlated withdrawal-list request 
 ## Contribute
 
 Bug reports, focused fixes, item-category corrections and UI improvements are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). Keep credentials and game files out of issues and pull requests. For private vulnerability reports, see [SECURITY.md](SECURITY.md).
+
+## Companion projects
+
+[DAMerchant](https://github.com/BuildWithRaymond/DAMerchant) handles trading and shop listings. [DASpeaker](https://github.com/BuildWithRaymond/DASpeaker) prepares timed speeches and announcements.
 
 ## License and credits
 

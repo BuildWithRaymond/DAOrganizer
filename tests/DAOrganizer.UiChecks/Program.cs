@@ -38,6 +38,12 @@ void Click(string label)
     button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
 }
 Capture("inventory");
+Click("Settings");
+var settings=window.OwnedWindows.Single(x=>x.Title=="Settings");
+if(!settings.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text=="Custom routes folder (optional)"))throw new Exception("Settings must explain optional route override.");
+if(settings.GetVisualDescendants().OfType<CheckBox>().Single().IsChecked!=false)throw new Exception("Automatic updates must default off.");
+if(settings.GetVisualDescendants().OfType<Button>().Single(x=>x.Content as string=="Install update and exit").IsEnabled)throw new Exception("Source build must not offer install.");
+Capture("settings",settings);settings.Close();
 var slots=window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.UniformGrid>().Single();
 if(slots.Columns!=12||slots.Rows!=5||slots.Children.Count!=60)throw new Exception("Inventory geometry must match the game: 12 × 5.");
 if(slots.Children.Take(5).Cast<SlotButton>().Any(x=>!x.CanDrag))throw new Exception("Unpinned potions must be draggable.");
@@ -136,62 +142,27 @@ filter.GetVisualDescendants().OfType<CheckBox>().Single(x=>x.Content as string==
 filter.Close();Capture("all-accounts-filtered");
 if(app.Accounts.Items("").Count!=89)throw new Exception("Display filtering failed.");
 if(app.Store.Items("Storage","Inventory").Count!=1)throw new Exception("Hiding must not remove history.");
-app.Store.SaveSnapshot("Example","Bank",app.Store.Items("Example","Bank").Append(new Item(81,"Water Dungeon Chest",1,15,IsStackable:true)),true);
-app.Store.SaveSnapshot("Storage","Bank",[new Item(1,"Water Dungeon Chest",1,15,IsStackable:true)],true);
-var storageRole=app.Accounts.AddStorageRole("Storage","Chests");
-app.Accounts.AddStorageRule(storageRole.Id,StorageMatchKind.Item,ItemGroups.Key(new Item(1,"Water Dungeon Chest",1,15)));
-Click("Organization plan");
-var noDirect=window.OwnedWindows.Single(x=>x.Title=="Organization plan");
-Capture("organization-no-direct",noDirect);
-if(!noDirect.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Configure account coexistence"))
-    throw new Exception("Missing direct-route setup action.");
-noDirect.Close();
 var sourceAccount=app.Accounts.CreateGameAccount("UI source");
 var destinationAccount=app.Accounts.CreateGameAccount("UI destination");
 app.Accounts.AssignCharacter("Example",sourceAccount.Id);
 app.Accounts.AssignCharacter("Storage",destinationAccount.Id);
 app.Accounts.SetPairCoexistence(sourceAccount.Id,destinationAccount.Id,CoexistencePolicy.Yes);
-Click("Account manager");
-var manager=window.OwnedWindows.Single(x=>x.Title=="Account manager");Capture("account-manager",manager);
-manager.GetVisualDescendants().OfType<Button>().First(x=>x.Content as string=="Game accounts & storage")
+app.Accounts.SetDisplay("Storage",true);Click("All accounts");Settle();
+emerald=window.GetVisualDescendants().OfType<Button>().Single(x=>x.Tag is ItemGroup g&&g.Item.Name=="Emerald");
+emerald.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Settle();
+if(window.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Organization plan"))
+    throw new Exception("Obsolete Organization plan must not be in normal navigation.");
+Click("Consolidate to bank");
+var consolidation=window.OwnedWindows.Single(x=>x.Title=="Consolidate to bank");
+var destination=consolidation.GetVisualDescendants().OfType<ComboBox>().Single();
+destination.SelectedItem="Storage";Settle();Capture("consolidate-to-bank",consolidation);
+if(!consolidation.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text?.Contains("Sources")==true)||
+   !consolidation.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text?.Contains("Example: 9 eligible")==true))
+    throw new Exception("Consolidation confirmation must show source characters and quantities.");
+if(consolidation.GetVisualDescendants().OfType<Button>().Any(x=>(x.Content as string) is "Transfer one unit" or "Start capture" or "Save selected review draft"))
+    throw new Exception("Testing and planning controls leaked into the consolidation flow.");
+consolidation.GetVisualDescendants().OfType<Button>().Single(x=>x.Content as string=="Cancel")
     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
-var storage=manager.OwnedWindows.Single(x=>x.Title=="Game accounts & storage");
-storage.GetVisualDescendants().OfType<ComboBox>().First().SelectedItem="Storage";Dispatcher.UIThread.RunJobs();
-Capture("storage-setup",storage);storage.Close();manager.Close();
-Click("Organization plan");
-var organization=window.OwnedWindows.Single(x=>x.Title=="Organization plan");Capture("organization-plan",organization);
-var trialButton=organization.GetVisualDescendants().OfType<Button>()
-    .Single(x=>x.Content as string=="Transfer one unit");
-var routeChoice=organization.GetVisualDescendants().OfType<ComboBox>()
-    .Single(x=>x.PlaceholderText=="Choose one Direct route");
-routeChoice.SelectedIndex=0;Dispatcher.UIThread.RunJobs();
-trialButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
-var confirmation=organization.OwnedWindows.Single(x=>x.Title=="Confirm one-unit transfer");
-if(!confirmation.GetVisualDescendants().OfType<TextBlock>().Any(x=>x.Text?.Contains("Move 1 ")==true))
-    throw new Exception("Transfer confirmation must name the one-unit move.");
-confirmation.GetVisualDescendants().OfType<Button>().Single(x=>x.Content as string=="Cancel")
-    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
-if(app.Store.ListOrganizationPlans().Count!=0)
-    throw new Exception("Cancelling a direct transfer must not save or approve a plan.");
-var expanders=organization.GetVisualDescendants().OfType<Expander>().ToArray();
-var visibility=expanders.Single(x=>x.Header as string=="Visibility details (advanced)");
-var reviewExpander=expanders.Single(x=>x.Header as string=="Advanced review drafts");
-if(visibility.IsExpanded||reviewExpander.IsExpanded)throw new Exception("Advanced transfer controls should start collapsed.");
-visibility.IsExpanded=true;reviewExpander.IsExpanded=true;Dispatcher.UIThread.RunJobs();
-if(!organization.GetVisualDescendants().OfType<Button>().Any(x=>x.Content as string=="Check live visibility"))
-    throw new Exception("Missing read-only direct trade visibility check.");
-var firstCandidate=organization.GetVisualDescendants().OfType<CheckBox>()
-    .First(x=>(x.Content as string)?.Contains("slot",StringComparison.Ordinal)==true);
-if(trialButton.TranslatePoint(default,organization)?.Y is not double actionY||
-    firstCandidate.TranslatePoint(default,organization)?.Y is not double candidateY||actionY>=candidateY)
-    throw new Exception("Direct transfer action must be visible above the long candidate list.");
-var saveDraft=organization.GetVisualDescendants().OfType<Button>()
-    .Single(x=>x.Content as string=="Save selected review draft");
-firstCandidate.IsChecked=true;
-saveDraft.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Dispatcher.UIThread.RunJobs();
-var saved=app.Store.ListOrganizationPlans();
-if(saved.Count!=1||saved[0].Plan.Steps.Length!=1||saved[0].Approval!=PlanApprovalState.Draft)
-    throw new Exception("Selected exact review draft was not saved.");
-organization.Close();
+if(app.Store.ListOrganizationPlans().Count!=0)throw new Exception("Cancelling consolidation must not save a transfer plan.");
 window.Close();
 Console.WriteLine("UI checks completed. Synthetic data only.");

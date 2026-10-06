@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.15.0 ? Game sprites and flexible quick slots
+## 0.16.0 — Ready to organize
+
+- Added self-contained Windows installer and update-capable portable ZIP with optional stable GitHub updates. Automatic downloads and installation on safe exit are off by default; manual controls are available in Settings. Active operations and open organizer-launched clients block installation.
+- Bundled 1,432 WorldLogs maps as route-only data. Fresh profiles need no route setup; unavailable old paths fall back to included routes, with a custom-folder override retained.
+- Added reviewed consolidation to one destination bank, sequential source handling, protected quantities and protocol-confirmed custody/recovery. Same-account handoff remains unsupported.
+- Included accumulated exchange, withdrawal, delivery confirmation and recovery fixes, plus boundary-portal and route-selection regressions.
+- Restored original DAOrganizer launch artwork, refreshed screenshots and setup documentation, and trimmed development material from user packages.
+- Profiles and saved logins retain their existing locations. Older ZIPs need one manual upgrade to gain updater support. Releases remain unsigned.
+
+
+## 0.15.0 — Game sprites and flexible quick slots
 
 - Restored original game sprites in demo mode and replaced the public screenshots. Missing artwork shows item names; invented item drawings have been removed.
 - Available quick potions compact from slot 1 in priority order. Carried Dual Crystal Arrows take slot 1 first, regardless of class.

@@ -23,3 +23,7 @@ Find and inspect the existing ImageGen DAOrganizer launch artwork. Use it in the
 ## Verification and publication
 
 Write behavioral tests before updater/settings/fallback implementation. Cover opt-out, demo isolation, stale/custom route paths, bundled route availability, background errors and refusing unsafe apply. Run Release build, focused/full unit tests, headless UI checks, normal/compact gallery, release-helper checks and package content inspection. Exercise a disposable packaged installation update without game clients or real profiles. Inspect the final diff, build a clean release candidate, then commit/push only approved release scope, tag and publish matching checked assets. Never operate Excalibur.exe.
+
+## Approval and validation
+
+Owner approved this design and inclusion of the existing consolidation scope on October 5, 2026. Implementation is complete. Local validation: Release solution build with zero warnings/errors; 334 unit/protocol tests; headless UI including Settings and consolidation; seven normal/compact demo renders with installed sprites; release-helper self-tests; x64 installer/portable/feed checks and corrupt-checksum rejection; native update of a disposable portable copy to a non-published test version with changed content. Live game actions were not revalidated for this release.

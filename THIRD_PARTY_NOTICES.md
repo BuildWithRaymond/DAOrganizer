@@ -44,7 +44,7 @@ SOFTWARE.
 
 The application also uses Avalonia, SkiaSharp, HarfBuzzSharp, Microsoft.Data.Sqlite, SQLitePCLRaw and the .NET runtime. Package license files and runtime notices are included with the published application where supplied by their packages. Test-only dependencies include xUnit, Microsoft.NET.Test.Sdk and Avalonia.Headless.
 
-Dark Ages executable, maps and item art remain in the user's installed game; they are not distributed with this application. WorldLogs is read from the user's supplied folder and is not copied into the package.
+Dark Ages executable, maps and item art remain in the user's installed game; they are not distributed with this application. The package includes route-only WorldLogs observations: map identifiers, labels, dimensions, portals and world-map links. These factual observations were derived from the owner's local route collection; descriptions and unrelated original fields were removed. No collision grids or raw game maps are bundled. See `src/DAOrganizer.Core/Resources/README.md` for provenance and dataset checksum.
 
 ## Vorlof item references
 
@@ -62,3 +62,11 @@ The organizer bundles its own classification rules. It does not include Vorlof p
 The Celtic seal and interlaced rules in `src/DAOrganizer.App/Ornaments.cs` are original vector drawings, covered by the repository MIT license. Item images are original Dark Ages sprites read from the user's installed game. Raw game assets are not bundled. Documentation screenshots show those sprites inside the app with fictional accounts; the depicted game artwork retains its original ownership and is not relicensed under MIT. No generated item illustrations or external fonts are included. Georgia, Segoe UI and Consolas are requested from the operating system.
 
 Trinket names/classifications were checked against [Vorlof's trinket list](https://vorlof.com/trinkets.html). The app includes factual names and local rules, not the site's descriptions or image files.
+
+## Velopack
+
+Optional updates and Windows packaging use [Velopack](https://github.com/velopack/velopack), version 1.2.161, under the MIT license. Its package-supplied license is included in published `licenses/`. Updates use the public DAOrganizer GitHub repository, without an account token.
+
+## Launch artwork
+
+`docs/screenshots/daorganizer-launch.png` is promotional artwork created with OpenAI ImageGen for DAOrganizer and recovered from the original generation. It is distinct from actual app screenshots and is not used as item artwork.

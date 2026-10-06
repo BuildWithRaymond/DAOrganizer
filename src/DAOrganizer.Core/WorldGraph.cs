@@ -31,26 +31,36 @@ public sealed class WorldGraph(IEnumerable<WorldMap> maps)
         var maps=new List<WorldMap>();
         foreach(var file in Directory.EnumerateFiles(folder,"*.json"))
         {
-            using var json=JsonDocument.Parse(File.ReadAllText(file));var r=json.RootElement;
-            var id=r.GetProperty("Number").GetInt32();var size=r.GetProperty("Size");var w=size.GetProperty("Width").GetInt32();var h=size.GetProperty("Height").GetInt32();
-            var portals=new List<Portal>();
-            foreach(var p in r.GetProperty("Portals").EnumerateObject())
-            {
-                var t=ParseTile(p.Name);var v=p.Value;
-                // One-tile boundary exits are retained; unrelated out-of-range observations are excluded.
-                if(t.X< -1||t.Y< -1||t.X>w||t.Y>h)continue;
-                portals.Add(new(id,t.X,t.Y,v.GetProperty("MapId").GetInt32(),v.GetProperty("X").GetInt32(),v.GetProperty("Y").GetInt32()));
-            }
-            if(r.TryGetProperty("WorldMaps",out var world))foreach(var p in world.EnumerateObject())
-            {
-                var t=ParseTile(p.Name);
-                foreach(var dest in p.Value.EnumerateObject())
-                {var d=ParseTile(dest.Value.GetString()!);portals.Add(new(id,t.X,t.Y,int.Parse(dest.Name),d.X,d.Y,true));}
-            }
-            var name=r.GetProperty("DisplayName").GetString()??r.GetProperty("Name").GetString()??id.ToString();
-            maps.Add(new(id,name,w,h,portals));
+            using var json=JsonDocument.Parse(File.ReadAllText(file));maps.Add(ReadMap(json.RootElement));
         }
         return new(maps);
+    }
+    public static WorldGraph LoadBundled()
+    {
+        using var stream=typeof(WorldGraph).Assembly.GetManifestResourceStream("DAOrganizer.Core.Resources.world-routes.json")
+            ??throw new InvalidDataException("Bundled routes are missing. Download the complete DAOrganizer release.");
+        using var json=JsonDocument.Parse(stream);
+        return new(json.RootElement.EnumerateArray().Select(ReadMap).ToArray());
+    }
+    private static WorldMap ReadMap(JsonElement r)
+    {
+        var id=r.GetProperty("Number").GetInt32();var size=r.GetProperty("Size");var w=size.GetProperty("Width").GetInt32();var h=size.GetProperty("Height").GetInt32();
+        var portals=new List<Portal>();
+        foreach(var p in r.GetProperty("Portals").EnumerateObject())
+        {
+            var t=ParseTile(p.Name);var v=p.Value;
+            // One-tile boundary exits are retained; unrelated out-of-range observations are excluded.
+            if(t.X< -1||t.Y< -1||t.X>w||t.Y>h)continue;
+            portals.Add(new(id,t.X,t.Y,v.GetProperty("MapId").GetInt32(),v.GetProperty("X").GetInt32(),v.GetProperty("Y").GetInt32()));
+        }
+        if(r.TryGetProperty("WorldMaps",out var world))foreach(var p in world.EnumerateObject())
+        {
+            var t=ParseTile(p.Name);
+            foreach(var dest in p.Value.EnumerateObject())
+            {var d=ParseTile(dest.Value.GetString()!);portals.Add(new(id,t.X,t.Y,int.Parse(dest.Name),d.X,d.Y,true));}
+        }
+        var name=r.GetProperty("DisplayName").GetString()??r.GetProperty("Name").GetString()??id.ToString();
+        return new(id,name,w,h,portals);
     }
     private static Tile ParseTile(string value){var p=value.Split(',');return new(int.Parse(p[0]),int.Parse(p[1]));}
 }

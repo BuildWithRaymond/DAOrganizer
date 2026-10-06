@@ -8,7 +8,7 @@ on:
       tag:
         description: Stable or beta tag to validate
         required: true
-        default: v0.15.0
+        default: v0.16.0
       publish:
         description: Explicitly publish matching existing tag after candidate validation
         type: boolean
@@ -46,22 +46,34 @@ jobs:
         run: dotnet tests/DAOrganizer.UiChecks/bin/Release/net10.0/DAOrganizer.UiChecks.dll artifacts/gallery --gallery
       - name: Test release helper
         run: dotnet run --project tools/DAOrganizer.Release -c Release -- self-test
-      - name: Package portable Windows app
-        run: ./tools/Package.ps1 -Output artifacts/package
+      - name: Package installer, portable app and updates
+        run: ./tools/Build-Release.ps1
       - name: Create and validate release files
         shell: pwsh
         run: |
           $notes="https://github.com/${{ github.repository }}/blob/$env:RELEASE_TAG/CHANGELOG.md"
-          dotnet run --project tools/DAOrganizer.Release -c Release -- create --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --package artifacts/package --output artifacts/release --repository ${{ github.repository }} --notes-url $notes
+          [xml]$project=Get-Content src/DAOrganizer.App/DAOrganizer.App.csproj
+          $package="artifacts/release-package-"+$project.Project.PropertyGroup.Version
+          dotnet run --project tools/DAOrganizer.Release -c Release -- create --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --package $package --output artifacts/release-evidence --repository ${{ github.repository }} --notes-url $notes
           if ($LASTEXITCODE -ne 0) { throw 'Release generation failed.' }
-          dotnet run --project tools/DAOrganizer.Release -c Release -- verify --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --output artifacts/release --repository ${{ github.repository }}
+          dotnet run --project tools/DAOrganizer.Release -c Release -- verify --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --output artifacts/release-evidence --repository ${{ github.repository }}
           if ($LASTEXITCODE -ne 0) { throw 'Release candidate verification failed.' }
+          ./tools/Verify-Release.ps1
       - name: Upload reviewable candidate
         uses: actions/upload-artifact@v7
         with:
           name: release-candidate-${{ env.RELEASE_TAG }}
           path: artifacts/release/
           if-no-files-found: error
+      - name: Upload verification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-evidence-${{ env.RELEASE_TAG }}
+          path: |
+            artifacts/release-evidence/
+            artifacts/test-results/*.trx
+            artifacts/ui-checks/*.png
+            artifacts/gallery/*.png
 
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish == true
@@ -87,8 +99,9 @@ jobs:
       - name: Reverify candidate at publication boundary
         shell: pwsh
         run: |
-          dotnet run --project tools/DAOrganizer.Release -c Release -- verify --tag $env:RELEASE_TAG --project src/DAOrganizer.App/DAOrganizer.App.csproj --output artifacts/release --repository ${{ github.repository }}
-          if ($LASTEXITCODE -ne 0) { throw 'Publication candidate verification failed.' }
+          [xml]$project=Get-Content src/DAOrganizer.App/DAOrganizer.App.csproj
+          if ($env:RELEASE_TAG -ne "v"+$project.Project.PropertyGroup.Version) { throw 'Publication tag/version mismatch.' }
+          ./tools/Verify-Release.ps1
       - name: Publish approved GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -96,5 +109,5 @@ jobs:
         run: |
           $assetPaths = @(Get-ChildItem artifacts/release -File | ForEach-Object FullName)
           $channelArg = if ($env:RELEASE_TAG.Contains('-beta.')) { @('--prerelease') } else { @() }
-          gh release create $env:RELEASE_TAG @assetPaths --verify-tag --title "DA Organizer $env:RELEASE_TAG" --generate-notes @channelArg
+          gh release create $env:RELEASE_TAG @assetPaths --verify-tag --title "DAOrganizer $env:RELEASE_TAG" --notes-file "docs/releases/$env:RELEASE_TAG.md" @channelArg
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed.' }
